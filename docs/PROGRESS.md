@@ -1,0 +1,123 @@
+# Progres penelitian
+
+Terakhir diperbarui: **10 September 2026**.
+
+## Tujuan dan posisi saat ini
+
+Penelitian mengikuti [CONTEXT.md](../CONTEXT.md): memprediksi keterkutipan artikel web berbahasa Indonesia oleh Gemini dengan Google Search Grounding menggunakan XGBoost, membandingkannya dengan Logistic Regression dan Random Forest, serta menganalisis kontribusi fitur melalui SHAP dan ablation study.
+
+Unit analisis dataset utama nantinya adalah **pasangan query–artikel**. Target awal sekitar 300 query final dan maksimal 3.000 pasangan sebelum pembersihan. Target terdekat adalah memperoleh dataset awal yang dapat dibawa ke bimbingan dan dilanjutkan menjadi dataset pemodelan.
+
+**Progres implementasi saat ini baru sampai pengumpulan dan seleksi sumber query Google Trends.** Data yang sudah tersedia belum merupakan query final, label keterkutipan, atau dataset pasangan query–artikel. Pengambilan PAA dan sintesis belum dijalankan dalam rangkaian pekerjaan ini. CONTEXT.md mencatat pilot terdahulu 40 query; pilot tersebut belum diintegrasikan atau diaudit ulang dalam pekerjaan ini.
+
+## Pekerjaan yang telah selesai
+
+1. Meninjau rancangan penelitian dan menyusun alur kerja bertahap dengan Python untuk proses berulang serta Jupyter Notebook untuk peninjauan dan analisis.
+2. Mengumpulkan CSV Google Trends secara manual oleh peneliti, tanpa kata kunci awal, menggunakan periode setahun terakhir dan kategori Kesehatan, Keuangan, serta Komputer & elektronik. Nama ekspor mencantumkan wilayah ID dan rentang 10 September 2025–10 September 2026. Tautan Explore, jenis pencarian, dan metadata kategori terperinci masih perlu dicatat dalam manifest sumber.
+3. Memisahkan enam ekspor sumber di `data/before/` dan enam CSV hasil seleksi di `data/`. Ekspor asli tidak diubah oleh skrip penggabungan/review.
+4. Membuat dan menjalankan [src/merge_trends.py](../src/merge_trends.py). Skrip menggabungkan enam CSV terpilih, mempertahankan teks serta nilai Trends asli, dan menambahkan ID, domain, jenis daftar, file asal, serta nomor baris data.
+5. Membuat [notebook peninjauan](../notebooks/01_review_trends_sources.ipynb) dan [modul review](../src/review_trends.py). Notebook mengelompokkan teks identik, menampilkan filter, menerima keputusan manual, menyimpan progres, dan mengekspor daftar per status.
+6. Memasang `ipykernel` pada virtual environment proyek. Dependensi notebook dicatat dalam [requirements-notebooks.txt](../requirements-notebooks.txt). Penggabungan dan penyimpanan CSV menggunakan library standar Python.
+7. Melengkapi keputusan review berdasarkan arahan peneliti, termasuk alasan serta intent untuk sumber siap sintesis. Keputusan yang sudah ditulis peneliti dan sesuai aturan terbaru dipertahankan.
+8. Mengeluarkan enam sumber GTK, memperbarui penggabungan, menyelaraskan kembali asal sumber, dan memperbarui dictionary keputusan serta ekspor notebook.
+
+## Dataset sumber terkini
+
+| Domain | Top | Rising | Total baris sumber | Teks unik aktif |
+|---|---:|---:|---:|---:|
+| Kesehatan | 29 | 29 | 58 | 57 |
+| Keuangan | 46 | 41 | 87 | 76 |
+| Teknologi | 47 | 41 | 88 | 76 |
+| **Total** | **122** | **111** | **233** | **209** |
+
+Penggabungan mempertahankan seluruh 233 kemunculan sumber. Review memiliki satu baris per teks yang persis sama, sehingga berisi 209 baris. Pengelompokan ini belum menghapus duplikasi semantik atau kesamaan intent.
+
+## Keputusan review yang berlaku
+
+Keputusan berikut merupakan arahan peneliti, **bukan hasil LLM Judgment**. Top/Rising menunjukkan asal daftar, bukan ukuran kualitas query.
+
+- Kesehatan Top: `needs_paa`.
+- Kesehatan Rising: `ready_for_synthesis`, dengan pengecualian di bawah.
+- `icd 10`: diperbarui dari `needs_review` menjadi `needs_paa` setelah penjelasan klasifikasi penyakit dan masalah kesehatan diverifikasi melalui [WHO](https://icd.who.int/browse10/2019/en) dan disetujui peneliti. Intent tetap kosong karena kebutuhan informasi belum spesifik.
+- Sumber setelah `icd 10` sampai `abu vulkanik` dalam urutan review: `needs_paa`.
+- `best sunscreen for face`: `needs_paa`, untuk menelusuri kebutuhan yang lebih spesifik melalui PAA tanpa mengarang jenis kulit dalam query.
+- `campak`, yang muncul pada Top dan Rising: `needs_paa`; keputusan rentang/Top didahulukan.
+- Keuangan dan teknologi: seluruh sumber aktif menjadi `needs_paa`.
+- Keputusan `best pillow for side sleepers` tetap `ready_for_synthesis`, dengan intent mencari rekomendasi bantal untuk orang yang tidur menyamping.
+
+| Domain | `needs_paa` | `ready_for_synthesis` | `needs_review` | Total |
+|---|---:|---:|---:|---:|
+| Kesehatan | 31 | 26 | 0 | 57 |
+| Keuangan | 76 | 0 | 0 | 76 |
+| Teknologi | 76 | 0 | 0 | 76 |
+| **Total** | **183** | **26** | **0** | **209** |
+
+Tidak ada sumber aktif berstatus `unreviewed` atau `needs_review`. Bahasa yang belum dapat ditetapkan dengan yakin ditandai `unknown`. Intent untuk `needs_paa` dikosongkan agar tidak menciptakan kebutuhan informasi sebelum pertanyaan sumber diperoleh.
+
+## Pengeluaran GTK dan jejak perubahan
+
+Alasan peneliti: GTK lebih berkaitan dengan pendidikan dan tidak sesuai cakupan teknologi penelitian ini.
+
+Enam teks yang dikeluarkan:
+
+- `gtk`
+- `info gtk`
+- `info gtk kemendikdasmen`
+- `info gtk 2026`
+- `emis gtk`
+- `ruang gtk`
+
+Peneliti telah menghapus empat kueri pada Rising. Saat pemeriksaan, dua kueri pada Top masih tersedia dan kemudian dikeluarkan dengan alasan yang sama.
+
+Sebelum perubahan ini, dataset gabungan memuat 239 baris dan review memuat 215 teks unik. Setelah perubahan: 233 baris dan 209 teks unik. Jumlah `needs_paa` saat pengeluaran GTK turun dari 188 menjadi 182; keputusan sumber lainnya dipertahankan. Setelah keputusan lanjutan untuk `icd 10`, jumlah terkini menjadi 183.
+
+Jejak pengeluaran tersimpan terpisah di [data/manual/gtk_exclusions.csv](../data/manual/gtk_exclusions.csv), termasuk ID dan referensi sumber sebelumnya, alasan, serta waktu pengeluaran. Karena keenam sumber telah dihapus dari masukan aktif, mereka tidak muncul dalam `data/interim/review/excluded.csv`; daftar pengeluaran GTK harus dibaca bersama ekspor status aktif saat melaporkan seleksi.
+
+Cadangan sebelum penyelarasan tersedia di `outputs/review_backups/20260910T041943791901Z/`. Cadangan ini menyimpan notebook, review, gabungan lama, serta CSV terpilih pada saat pemeriksaan; empat penghapusan Rising oleh peneliti sudah terjadi sebelum cadangan tersebut. Ekspor asli tetap berada di `data/before/`.
+
+`source_id` berasal dari nomor baris dan dapat berubah setelah penghapusan. Pada penyelarasan ini, keputusan lama dipertahankan melalui `topic_id` berbasis hash teks, setelah kecocokan teks dan domain diperiksa; referensi ke baris masukan dibentuk ulang. Validasi perubahan sumber pada `load_review` tetap aktif agar perubahan berikutnya tidak diterima diam-diam.
+
+## Berkas kerja dan cara melanjutkan
+
+| Berkas | Fungsi |
+|---|---|
+| `data/top_*.csv`, `data/rising_*.csv` | Enam CSV sumber terpilih |
+| `data/before/` | Ekspor asli Google Trends |
+| `data/interim/trends_sources.csv` | Seluruh kemunculan sumber hasil penggabungan |
+| `data/manual/trends_review.csv` | Progres keputusan untuk teks unik aktif |
+| `data/manual/gtk_exclusions.csv` | Catatan sumber GTK yang dikeluarkan |
+| `data/interim/review/needs_paa.csv` | 183 topik untuk penelusuran PAA |
+| `data/interim/review/ready_for_synthesis.csv` | 26 sumber untuk persiapan sintesis |
+| `data/interim/review/needs_review.csv` | Kosong; seluruh sumber aktif telah diputuskan |
+
+Jalankan penggabungan dari direktori utama proyek:
+
+```powershell
+.\venv\Scripts\python.exe .\src\merge_trends.py
+```
+
+Buka notebook dan pilih interpreter `venv/Scripts/python.exe`. Jalankan sel dari atas ke bawah. Untuk koreksi keputusan, cari komentar teks sumber di blok **Isi keputusan manual**, edit dictionary, lalu jalankan sel keputusan dan sel simpan. Dictionary menerapkan keputusan yang tertulis di dalamnya; jangan mengedit CSV keputusan secara terpisah tanpa menyelaraskannya dengan notebook.
+
+Jika sumber CSV berubah lagi, arsipkan dan selaraskan review sebelum menjalankan notebook; menjalankan penggabungan saja tidak memigrasikan keputusan lama. Folder data dan outputs saat ini diabaikan Git sesuai `.gitignore`, sehingga arsip data perlu disimpan secara terpisah dari kode.
+
+## Pemeriksaan yang dilakukan
+
+- Penggabungan enam file dengan pemeriksaan struktur dan query kosong.
+- Eksekusi seluruh sel kode notebook secara berurutan menggunakan Python virtual environment.
+- Pemeriksaan keunikan ID topik dan jumlah kemunculan sumber.
+- Pemeriksaan bahwa kueri GTK tidak berada pada sumber, review, atau dictionary keputusan aktif.
+- Pemeriksaan bahwa keputusan sumber yang dipertahankan tidak berubah akibat pembaruan nomor baris.
+- Pemeriksaan pemuatan ulang review, konsistensi ekspor per status, dan kestabilan penerapan ulang keputusan.
+
+## Pekerjaan berikutnya
+
+1. Lengkapi manifest pengumpulan Trends dan pemetaan ekspor asli ke file terpilih; jangan mengasumsikan metadata yang tidak tersedia di CSV.
+2. Tinjau metadata bahasa yang masih `unknown` bila diperlukan untuk tahap berikutnya; pemeriksaan makna `icd 10` telah selesai.
+3. Tetapkan konfigurasi dan aturan pengambilan PAA: negara, bahasa, lokasi, kedalaman, penanganan hasil kosong, serta penyimpanan respons mentah.
+4. Ambil batch kecil PAA dari daftar 183 topik; pertahankan hubungan ke `topic_id` Trends dan seleksi pertanyaan berdasarkan cakupan serta kejelasan intent.
+5. Susun rubrik dan prompt penilai Judgment pertama, lalu susun, nilai, dan revisi prompt sintesis sebelum dipakai.
+6. Uji sintesis pada batch kecil dari sumber siap sintesis dan PAA yang telah diterima. Pertahankan makna sumber, terjemahkan sesuai aturan, dan hindari tambahan fakta atau batasan.
+7. Lanjutkan pemeriksaan deterministik, Judgment kedua, dan audit manual.
+8. Setelah instrumen siap, lanjutkan pilot/pengumpulan Google dan Gemini, resolusi URL langsung, crawling artikel, label, dan fitur untuk dataset awal bimbingan.
+
+Jumlah pengulangan Gemini, ambang kelayakan grounding, ambang keterkutipan, dan definisi fitur final masih perlu dibekukan sesuai CONTEXT.md. Status `ready_for_synthesis` belum berarti query final atau lolos grounding.

@@ -1,0 +1,2 @@
+# Kernel untuk membuka notebook menggunakan virtual environment proyek.
+ipykernel==7.3.0
