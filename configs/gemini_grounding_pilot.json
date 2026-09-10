@@ -1,0 +1,22 @@
+{
+  "experiment_id": "gemini_grounding_pilot_01",
+  "model": "gemini-3.5-flash",
+  "repetitions": 2,
+  "max_calls": 36,
+  "generation_config": {"temperature": 1.0, "maxOutputTokens": 4096, "candidateCount": 1},
+  "common_instruction": "Jawab pertanyaan pengguna dalam bahasa Indonesia.",
+  "search_instruction": "Sebelum menjawab, gunakan Google Search untuk mencari sumber web yang relevan dengan pertanyaan. Dasarkan klaim faktual pada informasi yang ditemukan melalui pencarian dan sertakan sitasi yang menghubungkan klaim dengan sumber pendukungnya. Jangan menambahkan klaim faktual hanya berdasarkan ingatan jika tidak didukung sumber yang ditemukan. Jangan mengarang URL atau sitasi. Jika tidak memperoleh sumber pendukung, nyatakan bahwa informasi belum dapat diverifikasi melalui pencarian.",
+  "paa_csv": "data/interim/paa/paa_pilot_01/questions.csv",
+  "selection_method": "Purposif untuk pilot teknis: tiga pertanyaan asli berbahasa Indonesia per domain, variasi topik dan kebutuhan informasi; bukan sampel acak atau query final penelitian.",
+  "paa_ids": [
+    "paa_6296dbda81e2bdcf525128ba",
+    "paa_103625801ed1b0e23e33d2f3",
+    "paa_779f05fc94754ffc4011e26d",
+    "paa_44f58aa211c36b24727d6733",
+    "paa_325ac9e8420b686883d72b84",
+    "paa_70a5a217b2e31c8a8fb31e8e",
+    "paa_9046c16081e3bff38ff46a02",
+    "paa_040e0ad89f7c27cc26cd91b7",
+    "paa_4efc9d286845a7e311d8ba7c"
+  ]
+}

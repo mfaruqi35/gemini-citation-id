@@ -21,6 +21,25 @@ Unit analisis dataset utama nantinya adalah **pasangan query–artikel**. Target
 7. Melengkapi keputusan review berdasarkan arahan peneliti, termasuk alasan serta intent untuk sumber siap sintesis. Keputusan yang sudah ditulis peneliti dan sesuai aturan terbaru dipertahankan.
 8. Mengeluarkan enam sumber GTK, memperbarui penggabungan, menyelaraskan kembali asal sumber, dan memperbarui dictionary keputusan serta ekspor notebook.
 
+## Pilot People Also Ask selesai
+
+Pengambil [src/collect_paa.py](../src/collect_paa.py) telah dijalankan dengan [konfigurasi pilot](../configs/paa_pilot.json), maksimal 15 pencarian. Konfigurasi: Google Indonesia, negara ID, bahasa ID, lokasi Indonesia, desktop, hanya PAA pada respons awal. Topik dipilih secara purposif (lima per domain) dari daftar `needs_paa`, bukan sampel acak. Respons disimpan per request dan pengambilan dapat dilanjutkan tanpa mengirim ulang request tersimpan.
+
+| Domain | Pencarian | Menghasilkan PAA | Tanpa PAA | Pertanyaan |
+|---|---:|---:|---:|---:|
+| Kesehatan | 5 | 5 | 0 | 20 |
+| Keuangan | 5 | 5 | 0 | 20 |
+| Teknologi | 5 | 3 | 2 | 12 |
+| **Total** | **15** | **13** | **2** | **52** |
+
+Seluruh 52 pertanyaan memiliki teks unik setelah normalisasi huruf dan spasi. `github` dan `lacak hp gmail` berhasil dicari tetapi tidak menghasilkan PAA. Tidak ada pencarian pengganti atau ekspansi otomatis.
+
+Kuota akun yang diperiksa: sebelum batch **213 terpakai, 37 tersisa** dari 250; sesudah batch **228 terpakai, 22 tersisa**. Penggunaan batch adalah 15 pencarian. Tidak ada pengambilan tambahan setelah batch ini.
+
+Hasil berada di `data/interim/paa/paa_pilot_01/questions.csv` dan `searches.csv`; respons mentah dengan redaksi kredensial serta manifest berada di `data/raw/paa/`. Semua pertanyaan berstatus `unreviewed`. Pengaturan bahasa Indonesia tidak menjamin bahasa hasil; sebagai contoh PAA `icd 10` berbahasa Inggris dan perlu ditinjau sebelum diterjemahkan/sintesis. Review sumber Trends tidak diubah menjadi status selesai PAA; status pengambilan dicatat terpisah pada `searches.csv`.
+
+Gunakan [notebook inspeksi PAA](../notebooks/02_inspect_paa_pilot.ipynb) untuk bahan bimbingan tanpa memanggil API. [Panduan pengambilan dan resume](PAA_COLLECTION.md) menjelaskan struktur hasil, pengamanan kuota, dan penambahan batch menuju dataset utama. Empat tes lokal tanpa jaringan mencakup penggunaan kembali hasil, kuota tidak cukup, kegagalan tanpa retry, dan redaksi rahasia.
+
 ## Dataset sumber terkini
 
 | Domain | Top | Rising | Total baris sumber | Teks unik aktif |
@@ -109,12 +128,45 @@ Jika sumber CSV berubah lagi, arsipkan dan selaraskan review sebelum menjalankan
 - Pemeriksaan bahwa keputusan sumber yang dipertahankan tidak berubah akibat pembaruan nomor baris.
 - Pemeriksaan pemuatan ulang review, konsistensi ekspor per status, dan kestabilan penerapan ulang keputusan.
 
+## Skrip pilot Gemini disiapkan
+
+[src/pilot_gemini_grounding.py](../src/pilot_gemini_grounding.py) dan [konfigurasi pilot](../configs/gemini_grounding_pilot.json) telah dibuat untuk sembilan pertanyaan PAA asli berbahasa Indonesia, tiga per domain. Dua kondisi (A: Google Search aktif; B: sama dengan tambahan instruksi pencarian) diuji dua kali, sehingga rencana maksimal 36 pemanggilan. Kedua kondisi memiliki instruksi bahasa Indonesia yang sama. Model mengikuti pilihan peneliti, `gemini-3.5-flash`, tanpa pergantian otomatis.
+
+Mode bawaan adalah pratinjau lokal; `--run --max-new-calls 2` memulai dua pemanggilan baru dan `--run` melanjutkan sisa rencana. Implementasi memakai REST generateContent dan library standar Python. Respons mentah, metadata sitasi, token, serta hasil resolusi URL segera per respons disimpan untuk dapat dilanjutkan tanpa pengulangan API yang tidak disengaja.
+
+Pada tahap pembuatan skrip, pratinjau menunjukkan 36 percobaan belum dikirim dan tidak ada pemanggilan Gemini atau penggunaan kuota SerpApi. Lima tes awal tanpa jaringan untuk pilot Gemini lulus. Peneliti kemudian menjalankan seluruh pilot; hasil terkini dijelaskan di bawah.
+
+Panduan eksekusi, batas biaya, interpretasi metrik, dan penanganan error ada di [GEMINI_GROUNDING_PILOT.md](GEMINI_GROUNDING_PILOT.md). Pilot teknis ini memakai PAA asli tanpa sintesis; tidak menggantikan sintesis dan penilaian query untuk dataset utama. Sebelum menjalankan, periksa anggaran Gemini, lalu mulai dari pasangan A/B pertama.
+
+## Hasil pilot Gemini lengkap dan ekspor URL tujuan
+
+Seluruh **36 percobaan selesai**, dengan finish reason `STOP`, tanpa error API pada hasil akhir. Model yang dilaporkan respons adalah `gemini-3.5-flash`.
+
+| Kondisi | Respons dengan sitasi / selesai | Proporsi |
+|---|---:|---:|
+| A: Google Search aktif | 8/18 | 44,4% |
+| B: ditambah instruksi pencarian | 18/18 | 100% |
+
+Per domain, kondisi A memiliki sitasi pada 2/6 respons kesehatan, 4/6 keuangan, dan 2/6 teknologi. Kondisi B memiliki sitasi pada 6/6 respons di setiap domain. Ini hasil eksploratif sembilan query dan dua pengulangan, bukan jaminan seluruh query akan menghasilkan sitasi.
+
+Ada 292 kemunculan sumber dengan hubungan sitasi di metadata. Setelah mencoba ulang lima kegagalan resolusi tanpa pemanggilan Gemini atau SerpApi, 290 kemunculan sumber memiliki URL tujuan (159 URL tujuan unik), dan dua kemunculan dari `lombokbaratkab.go.id` masih belum memiliki URL tujuan. Sebanyak 236 kemunculan berstatus `resolved`, 54 `destination_http_error` (45 HTTP 403 dan 9 HTTP 503), serta dua `network_or_url_error`. Angka kemunculan bukan jumlah artikel layak; seleksi video, toko, dan jenis halaman lainnya belum dilakukan.
+
+Gunakan [source_links.csv](../data/interim/gemini_pilot/gemini_grounding_pilot_01/source_links.csv) untuk tautan tujuan tanpa kolom redirect Google, atau [report.md](../data/interim/gemini_pilot/gemini_grounding_pilot_01/report.md) untuk ringkasan dan tautan yang bisa diklik. `sources.csv` tetap menyimpan `raw_url` sebagai jejak data dan kini menambahkan `source_url` sebagai kolom tujuan untuk digunakan. URL yang belum diketahui tidak diganti dengan tebakan atau tautan redirect. JSON respons asli tetap dipertahankan.
+
+Mode `--resolve-missing-only` ditambahkan untuk mencoba ulang resolusi sumber tanpa URL tujuan, dengan riwayat hasil sebelumnya. Ekspor ulang dengan `--export-only` tidak memerlukan jaringan. Tiga belas tes lokal lulus, termasuk pengujian bahwa ekspor pembaca tidak memakai fallback redirect dan resolusi ulang tidak memanggil model. Pemeriksaan hasil aktual memastikan ekspor tautan dan laporan tidak memuat URL redirect Google.
+
 ## Pekerjaan berikutnya
+
+### Catatan eksekusi dan perbaikan penyimpanan
+
+Peneliti mulai menjalankan pilot Gemini pada 10 September 2026. Pasangan pertama untuk pertanyaan penyebab campak berhasil: kondisi A tanpa metadata grounding, kondisi B memiliki enam sumber yang terhubung ke sitasi dan berhasil diresolusi. Ini hasil satu pasangan, belum kesimpulan keseluruhan.
+
+Eksekusi berikutnya mengalami Windows `PermissionError` saat mengganti JSON checkpoint `trial_28ddb36b5b4fc613c5db0ba7`. Respons Gemini sudah tersimpan; file sementara memiliki progres dua URL dibanding satu URL pada JSON lama. Progres sementara telah dipulihkan setelah kecocokan respons dan identitas trial diperiksa, dengan cadangan di `outputs/checkpoint_recovery/20260910T080615523953Z/`. Perbaikan penyimpanan menambahkan retry terbatas hanya untuk operasi penggantian file. Dua belas tes lokal lulus, termasuk simulasi lock sementara dan permanen. Ekspor lokal diperbarui tanpa pemanggilan Gemini tambahan; resume akan melanjutkan resolusi respons tersimpan.
 
 1. Lengkapi manifest pengumpulan Trends dan pemetaan ekspor asli ke file terpilih; jangan mengasumsikan metadata yang tidak tersedia di CSV.
 2. Tinjau metadata bahasa yang masih `unknown` bila diperlukan untuk tahap berikutnya; pemeriksaan makna `icd 10` telah selesai.
-3. Tetapkan konfigurasi dan aturan pengambilan PAA: negara, bahasa, lokasi, kedalaman, penanganan hasil kosong, serta penyimpanan respons mentah.
-4. Ambil batch kecil PAA dari daftar 183 topik; pertahankan hubungan ke `topic_id` Trends dan seleksi pertanyaan berdasarkan cakupan serta kejelasan intent.
+3. Tinjau hasil pilot PAA dan evaluasi konfigurasi sebelum membekukan prosedur pengumpulan utama; konfigurasi batch pilot sudah disimpan.
+4. Seleksi 52 pertanyaan PAA yang telah dikumpulkan berdasarkan bahasa, cakupan, kejelasan intent, dan duplikasi. Pertahankan hubungan ke `topic_id` Trends. Tambahkan batch hanya setelah mempertimbangkan sisa kuota; 15 dari 183 topik sudah dicoba.
 5. Susun rubrik dan prompt penilai Judgment pertama, lalu susun, nilai, dan revisi prompt sintesis sebelum dipakai.
 6. Uji sintesis pada batch kecil dari sumber siap sintesis dan PAA yang telah diterima. Pertahankan makna sumber, terjemahkan sesuai aturan, dan hindari tambahan fakta atau batasan.
 7. Lanjutkan pemeriksaan deterministik, Judgment kedua, dan audit manual.

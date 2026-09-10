@@ -1,0 +1,19 @@
+{
+  "batch_id": "paa_pilot_01",
+  "purpose": "Batch eksplorasi untuk bimbingan; pemilihan purposif untuk variasi topik, bukan sampel acak.",
+  "max_searches": 15,
+  "quota_reserve": 5,
+  "parameters": {
+    "engine": "google",
+    "google_domain": "google.co.id",
+    "gl": "id",
+    "hl": "id",
+    "location": "Indonesia",
+    "device": "desktop"
+  },
+  "topics": {
+    "kesehatan": ["icd 10", "obat batuk", "campak", "vitamin c", "sunscreen"],
+    "keuangan": ["pajak", "npwp", "pegadaian", "pinjaman daring", "dividen"],
+    "teknologi": ["vpn", "github", "excel", "laptop asus", "lacak hp gmail"]
+  }
+}
