@@ -250,6 +250,58 @@ Peneliti menetapkan rubrik lima tingkat: (1) pemerintah atau institusi berstatus
 
 ### PAA ekspansi 02 ? pemakaian sisa kuota akun pertama
 
-Pada 11 September 2026 dijalankan 22 pencarian baru dari topik Trends needs_paa (7 kesehatan, 7 keuangan, 8 teknologi), tanpa mengulang request lama dan tanpa Gemini. Sebanyak 16 pencarian menghasilkan PAA dan 6 tidak memiliki PAA; tidak ada request gagal. Tersimpan 64 kemunculan pertanyaan. Kuota akun sebelum pengumpulan 22 (228/250 terpakai); setelahnya 0 (250/250 terpakai).
+Pada 11 September 2026 dijalankan 22 pencarian baru dari topik Trends needs_paa (7 kesehatan, 7 keuangan, 8 teknologi), tanpa mengulang request lama dan tanpa Gemini. Sebanyak 16 pencarian menghasilkan PAA dan 6 tidak memiliki PAA; tidak ada request gagal. Tersimpan 64 kemunculan pertanyaan. Kuota akun sebelum pengumpulan 22 (228/250 terpakai); setelahnya masih 1 (249/250 terpakai); jumlah request tidak selalu sama dengan pengurangan kuota.
 
 Batch `paa_expansion_02` ditambahkan ke konfigurasi query ekspansi yang digunakan Notebook 05. Hasil ekspor menambah 64 kandidat unik berdasarkan query_id; kandidat baru belum ditinjau. Seluruh keputusan manual sebelumnya dipertahankan identik. Respons mentah, manifest, catatan kuota, dan CSV hasil tersimpan; batch utama main_01 tidak diubah.
+
+
+Pemeriksaan kuota terakhir pada 11 September 2026 07:24 UTC mengonfirmasi 0 tersisa (250/250 terpakai), tersimpan di `data/raw/paa/batches/paa_expansion_02/quota_final.json`. Rencana satu pencarian tambahan `compress pdf` dibatalkan otomatis oleh pemeriksaan kuota sebelum request pencarian dikirim; konfigurasi sementara dihapus. Hasil akhir tetap 22 pencarian, 64 kandidat tambahan: 28 kesehatan, 24 keuangan, 12 teknologi. Pool ekspansi kini 309 kandidat: 123 accepted, 29 needs_review, 31 excluded, 126 pending.
+
+
+## LLM-as-a-judge untuk seleksi query di Notebook 05
+
+Atas permintaan peneliti, asisten LLM dalam sesi Codex menilai kelayakan query PAA menggunakan rubrik yang dirumuskan melalui diskusi dengan peneliti. Kegiatan ini termasuk **LLM-as-a-judge untuk penyaringan query**, atau seleksi berbantuan LLM dengan koreksi manusia. Ini bukan sintesis query: teks pertanyaan PAA asli tidak ditulis ulang. Ini juga bukan penilaian kebenaran jawaban Gemini, penilaian kredibilitas artikel, atau pembentukan label keterkutipan.
+
+### Masukan, rubrik, dan prosedur
+
+Masukan penilaian adalah teks kandidat, domain, status serta alasan review terdahulu, konteks sumber yang tersedia, dan daftar query yang sudah diterima untuk pemeriksaan duplikasi. Penilaian kejelasan intent didasarkan pada kemampuan teks berdiri sendiri; keyword asal tidak digunakan untuk menambahkan makna yang hilang. Asisten melihat seluruh konteks diskusi, sehingga proses ini bukan evaluasi buta dengan prompt terisolasi.
+
+Rubrik mencakup relevansi domain, kejelasan intent, kelengkapan bahasa Indonesia, kebutuhan informasi yang dapat dibahas artikel, dan duplikasi kebutuhan informasi. Pertanyaan umum, angka yang bergantung pada skenario, rekomendasi/perbandingan, dan premis yang mungkin keliru tidak otomatis ditolak. Penilaian tidak menggunakan jawaban atau keberhasilan sitasi Gemini sebagai dasar penerimaan.
+
+Duplikasi dinilai secara semantik oleh asisten dengan membandingkan objek, kebutuhan informasi, dan batas eksplisit. Query utama atau query yang sudah diterima diutamakan sebagai wakil. Entri yang dikeluarkan karena duplikasi mencantumkan alasan dan `duplicate_of` di notebook. Ini bukan hasil algoritme deduplikasi otomatis yang telah divalidasi.
+
+### Cakupan dan hasil penilaian
+
+Snapshot yang ditinjau berisi **149 query: 23 needs_review dan 126 pending**. Sebelum langkah ini terdapat 127 accepted dan 33 excluded, termasuk enam keputusan yang telah diisi peneliti. Keputusan final tersebut dipertahankan.
+
+| Domain | Accepted oleh asisten | Excluded oleh asisten |
+| --- | ---: | ---: |
+| Kesehatan | 48 | 6 |
+| Keuangan | 49 | 13 |
+| Teknologi | 22 | 11 |
+| Total | 119 | 30 |
+
+Seluruh keputusan dan alasan disimpan sebagai `assistant_decisions` dalam [Notebook 05](../notebooks/05_review_query_expansion.ipynb), bagian Review asisten berdasarkan rubrik. Sel penerapan menggunakan `reviewer=asisten_rubrik_v1`; koreksi peneliti menggunakan `reviewer=peneliti` dan tetap diutamakan. Reviewer asisten tidak dicatat sebagai penilai manusia.
+
+Pada saat penyusunan keputusan, notebook diuji menggunakan salinan data sementara: cakupan 149 keputusan, perlindungan keputusan final lama, pengulangan tanpa perubahan, dan prioritas koreksi peneliti telah diperiksa. CSV penelitian asli tidak diubah pada langkah penyusunan tersebut. Menjalankan sel penerapan menyimpan keputusan ke `data/manual/query_expansion_01_decisions.csv` dan memperbarui ekspor lokal. Jika seluruh keputusan diterapkan tanpa koreksi tambahan, total pool menjadi **246 accepted dan 63 excluded**. Tidak ada panggilan SerpApi atau Gemini untuk langkah review ini; penilaian dilakukan oleh asisten LLM dalam percakapan, bukan tanpa penggunaan LLM.
+
+### Batas pelaporan dan tindak lanjut
+
+Belum dilakukan penilaian independen oleh beberapa penilai, pengulangan penilaian LLM, atau pengukuran kesepakatan manusia-LLM. Keputusan ini tidak boleh dilaporkan sebagai ground truth manusia atau sebagai validasi objektif kelayakan query. Enam keputusan manusia yang sudah ada juga tidak merupakan pengujian kesepakatan independen untuk 149 keputusan baru.
+
+Prompt penilaian berasal dari instruksi dan rubrik dalam riwayat percakapan, bukan satu template prompt terpisah. Identitas layanan penilai adalah asisten Codex; ID model/snapshot yang dapat direproduksi dan parameter sampling tidak diarsipkan pada tahap ini, sehingga tidak boleh direka untuk pelaporan. Notebook menyimpan keputusan dan alasan, tetapi bukan rekaman lengkap input-output API penilai. Riwayat percakapan perlu dipertahankan sebagai jejak instruksi bila tersedia.
+
+Tindak lanjut metodologis: peneliti meninjau keputusan asisten, terutama penolakan karena ambiguitas dan duplikasi, mencatat koreksi beserta alasan, serta mengaudit konsistensi query yang sudah accepted/excluded sebelum langkah ini. Jika mengklaim reliabilitas penilaian, diperlukan evaluasi manusia independen yang direncanakan dan dilaporkan tersendiri. Keputusan akhir seleksi query tetap menjadi tanggung jawab peneliti.
+
+
+## 11 September 2026 - target sekitar 300 query accepted tercapai
+
+Peneliti meminta pengumpulan PAA tambahan dan keputusan langsung accepted/excluded menggunakan rubrik yang sama. Titik awal 287 accepted (41 main_01 dan 246 tambahan). Akun aktif diperiksa melalui Account API: 179 pencarian tersisa, bukan perkiraan 120-an.
+
+Batch paa_expansion_03 dan paa_expansion_04 mengirim sembilan pencarian dari keyword Trends needs_paa yang belum dicari: cetirizine, rupiah, subsidi tepat, blackbox ai, duckduckgo, gform, uang, maxstream, ibox. Lima pencarian menghasilkan PAA, dua no_paa (blackbox ai dan duckduckgo), dan dua error SerpApiError tanpa respons tersimpan (subsidi tepat dan maxstream). Rincian sebab jaringan/HTTP tidak tersedia pada checkpoint kolektor ini, sehingga penyebab pasti tidak disimpulkan. Resume hanya mengerjakan request yang belum memiliki checkpoint; error lama tidak dikirim ulang. Kuota akhir 170 (80/250 terpakai); sembilan pencarian terpakai, tanpa panggilan Gemini.
+
+Hasil: 20 kemunculan PAA, satu kemunculan query yang sudah ada (Tukar uang di BCA apakah bisa?), 19 kandidat baru. Penilaian LLM-as-a-judge dalam sesi Codex dengan rubrik yang sama menerima 15 dan mengeluarkan 4. Identitas reviewer: asisten_rubrik_target300_v1. Penolakan berkaitan dengan intent tidak lengkap atau konteks teknologi tidak jelas; penerimaan tidak memvalidasi premis medis/keuangan atau menjamin grounding. Tidak ada kandidat baru yang dibiarkan pending/needs_review. Semua keputusan dan alasan tercantum dalam blok tambahan Notebook 05 dan telah diterapkan ke CSV. Keputusan manual/asisten lama dipertahankan identik, termasuk timestamp.
+
+Total sekarang **302 accepted: 129 kesehatan, 103 keuangan, 70 teknologi**. Sebanyak 41 sudah masuk main_01, sedangkan **261 accepted tambahan belum menjalani pengumpulan utama**. Pool ekspansi berisi 328 kandidat (261 accepted, 67 excluded). Tujuh needs_review dan 29 deferred_language pada pool awal berada di luar lingkup review tambahan ini dan tidak diubah. main_01 tetap dibekukan; belum ada scraping artikel atau pengumpulan Gemini baru. Pengumpulan PAA dihentikan karena target tercapai.
+
+Berkas hasil: data/interim/paa/paa_expansion_03, data/interim/paa/paa_expansion_04, dan data/interim/query_expansion/query_expansion_01/accepted_new.csv. Backup sebelum penerapan: outputs/review_backups/20260911T094305962144Z. Verifikasi mencakup cakupan 19 keputusan, identitas reviewer, tidak ada overlap query_id accepted dengan main_01, jumlah total per domain, sintaks sel notebook, dan integritas manifest main_01.

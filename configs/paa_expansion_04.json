@@ -1,0 +1,23 @@
+{
+  "batch_id": "paa_expansion_04",
+  "purpose": "Tambahan bertahap setelah ekspansi 03 belum cukup mencapai sekitar 300 accepted; tiga keyword Trends belum dicari, tanpa Gemini.",
+  "max_searches": 3,
+  "quota_reserve": 10,
+  "parameters": {
+    "engine": "google",
+    "google_domain": "google.co.id",
+    "gl": "id",
+    "hl": "id",
+    "location": "Indonesia",
+    "device": "desktop"
+  },
+  "topics": {
+    "keuangan": [
+      "uang"
+    ],
+    "teknologi": [
+      "maxstream",
+      "ibox"
+    ]
+  }
+}

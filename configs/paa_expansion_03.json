@@ -1,0 +1,28 @@
+{
+  "batch_id": "paa_expansion_03",
+  "purpose": "Menambah query accepted dari 287 menuju sekitar 300 sesuai permintaan peneliti. Enam keyword Trends belum dicari, dipilih purposif untuk variasi dan tambahan teknologi; tanpa sintesis dan tanpa panggilan Gemini.",
+  "max_searches": 6,
+  "quota_reserve": 10,
+  "parameters": {
+    "engine": "google",
+    "google_domain": "google.co.id",
+    "gl": "id",
+    "hl": "id",
+    "location": "Indonesia",
+    "device": "desktop"
+  },
+  "topics": {
+    "kesehatan": [
+      "cetirizine"
+    ],
+    "keuangan": [
+      "rupiah",
+      "subsidi tepat"
+    ],
+    "teknologi": [
+      "blackbox ai",
+      "duckduckgo",
+      "gform"
+    ]
+  }
+}
