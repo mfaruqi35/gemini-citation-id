@@ -2,6 +2,16 @@
 
 Terakhir diperbarui: **10 September 2026**.
 
+## Pembaruan terbaru: jalur query asli tanpa sintesis
+
+Rancangan dilanjutkan menggunakan query asli Trends/PAA, tanpa sintesis LLM. Untuk batch awal, teks berbahasa Inggris dipisahkan tanpa diterjemahkan. [Protokol terbaru](MAIN_DATASET.md#query-asli) dan catatan di awal CONTEXT.md menggantikan tahapan sintesis yang masih muncul sebagai riwayat dalam dokumen ini.
+
+[prepare_original_queries.py](../src/prepare_original_queries.py) dan [notebook 03](../notebooks/03_review_original_queries.ipynb) telah dijalankan secara lokal. Dari 52 pertanyaan PAA dan 26 sumber Trends yang sebelumnya dianggap cukup spesifik, tersedia **49 kandidat berbahasa Indonesia**: 17 kesehatan, 20 keuangan, 12 teknologi. Sumber tersebut terdiri dari 48 PAA dan satu Trends. **29 sumber Inggris** diarsipkan sebagai ditunda, tanpa parafrasa atau terjemahan. Seluruh teks hasil telah diperiksa identik dengan sumbernya.
+
+CSV kandidat berada di `data/interim/original_queries/candidates_id.csv`. Semua kandidat masih `pending` untuk penilaian kualitas; ini belum 49 query final atau pasangan query–artikel. Notebook menerima keputusan memakai teks query, menyimpan progres ke `data/manual/original_query_decisions.csv`, dan mengekspor query yang diterima. Tidak ada API atau kuota tambahan yang digunakan.
+
+**Pekerjaan terdekat:** seleksi kualitas 49 kandidat, periksa duplikasi intent dan cakupan, lalu pilih batch untuk pengumpulan Google Top-10 dan Gemini. Sintesis dan Judgment prompt sintesis tidak lagi menjadi prasyarat jalur ini; rencana lama di bawah dibaca sebagai riwayat.
+
 ## Tujuan dan posisi saat ini
 
 Penelitian mengikuti [CONTEXT.md](../CONTEXT.md): memprediksi keterkutipan artikel web berbahasa Indonesia oleh Gemini dengan Google Search Grounding menggunakan XGBoost, membandingkannya dengan Logistic Regression dan Random Forest, serta menganalisis kontribusi fitur melalui SHAP dan ablation study.
@@ -172,4 +182,62 @@ Eksekusi berikutnya mengalami Windows `PermissionError` saat mengganti JSON chec
 7. Lanjutkan pemeriksaan deterministik, Judgment kedua, dan audit manual.
 8. Setelah instrumen siap, lanjutkan pilot/pengumpulan Google dan Gemini, resolusi URL langsung, crawling artikel, label, dan fitur untuk dataset awal bimbingan.
 
-Jumlah pengulangan Gemini, ambang kelayakan grounding, ambang keterkutipan, dan definisi fitur final masih perlu dibekukan sesuai CONTEXT.md. Status `ready_for_synthesis` belum berarti query final atau lolos grounding.
+Catatan rencana lama di atas telah diperbarui oleh protokol query asli dan pengumpulan utama di bawah. Status `ready_for_synthesis` tetap merupakan nama historis, bukan proses sintesis yang dijalankan saat ini.
+
+## Dataset utama: tiga percobaan, minimal dua valid
+
+Peneliti memilih melanjutkan langsung dataset utama tanpa sintesis LLM dan menetapkan tiga percobaan Gemini per query dengan minimal dua valid. [MAIN_DATASET.md](MAIN_DATASET.md) menjadi pedoman terbaru; langkah sintesis/pilot tambahan dalam catatan historis tidak lagi berlaku.
+
+Seleksi awal asisten pada 49 kandidat Indonesia menghasilkan 41 accepted, tujuh needs_review, dan satu excluded. Batch `main_01` berisi 15 kesehatan, 14 keuangan, dan 12 teknologi dengan maksimal 41 pencarian Google organik dan 123 panggilan Gemini. Akun SerpApi aktif terverifikasi memiliki kuota 250 sebelum pengumpulan dimulai. Respons pilot tidak digunakan ulang sebagai respons utama.
+
+Skrip `src/collect_main_dataset.py` menggunakan checkpoint, pembekuan manifest, batas kuota, serta ekspor query, percobaan, sumber, hasil Google, dan pasangan kandidat. Minimum valid mengacu pada respons STOP dengan teks dan sitasi web pada metadata. Resolusi gagal menjadi ketidakpastian pencocokan, bukan label negatif. Ambang biner belum ditetapkan; crawling artikel dan ekstraksi fitur merupakan tahap selanjutnya. Sebanyak 21 tes lokal lulus tanpa API, termasuk tiga percobaan/dua valid, resume, error, kuota, dan penanganan URL.
+
+Pengumpulan nyata sudah dimulai. Snapshot awal setelah tiga query selesai: sembilan percobaan, 24 pasangan kandidat, dua query memenuhi minimal dua valid. Satu query keuangan mengalami `MAX_TOKENS` pada ketiga percobaan dan belum layak dilabeli; ini kegagalan penyelesaian respons, bukan bukti tidak adanya sitasi. Progres berikutnya dapat dilihat di notebook 04, yang seluruh selnya telah diperiksa dengan hasil lokal tanpa API. Data pasangan masih memerlukan crawling, seleksi artikel, fitur, dan pelabelan.
+
+## Penambahan query dari kuota tersedia
+
+Batch `paa_expansion_01` menyelesaikan 30 pencarian dari 30 topik Trends baru (10 per domain), menghasilkan 96 PAA dan enam hasil tanpa PAA. Ditambah 96 kemunculan PAA dari respons utama tersimpan, snapshot berisi 192 kemunculan, 188 query unik berdasarkan domain/teks, dan 183 kandidat tambahan setelah lima query lama dipisahkan. Seleksi awal asisten menerima 123, menunda 29, dan mengeluarkan 31. Daftar diterima tambahan tersimpan terpisah; 41 query utama pertama tetap dipertahankan. Total daftar diterima awal + tambahan adalah 164, belum seluruhnya dikumpulkan Google/Gemini.
+
+Sisa kuota SerpApi pada snapshot setelah pengumpulan PAA adalah 197. Pipeline lokal `prepare_query_expansion.py` dan notebook 05 dapat mengekstrak PAA berikutnya tanpa API sambil mempertahankan keputusan lama, teks asli, hubungan induk, kedalaman PAA, dan asal topik Trends. Sebanyak 24 tes lokal lulus. Panduan serta alasan seleksi ada di [QUERY_EXPANSION.md](MAIN_DATASET.md#penambahan-query).
+
+Saat pemeriksaan ini, proses pengumpulan Gemini utama telah berhenti akibat HTTP 429 pada percobaan kedua query `Fungsi Excel apa saja?`. Checkpoint tersimpan dan penambahan query tidak menggunakan Gemini. Status ini memperbarui laporan sebelumnya bahwa pengumpulan masih berjalan.
+
+## Gabungan Google Top-10 dan semua sitasi Gemini
+
+Sesuai permintaan peneliti, ekspor pasangan kini juga menghasilkan `query_article_pairs_union.csv`, gabungan hasil organik Google dan seluruh URL tujuan yang disitasi pada percobaan Gemini valid. Metadata sitasi lengkap sebenarnya sudah disimpan; pembatasan sebelumnya terletak pada himpunan kandidat pasangan Google. URL berulang per query digabung dan sitasi dihitung sekali per percobaan, sementara sumber tidak valid/belum teresolusi tetap diarsipkan.
+
+Ekspor lokal tanpa API menghasilkan 554 pasangan gabungan (515 URL kandidat unik), dibanding 202 pasangan Google. Asalnya: 132 Google saja, 70 keduanya, 352 Gemini saja. Contoh query batuk memiliki 21 kandidat gabungan dari sembilan Google dan 15 URL sitasi, dengan tiga URL beririsan. Ini kandidat sebelum crawling dan seleksi halaman. Notebook 04 kini menampilkan tabel gabungan. Dua puluh delapan tes lokal lulus, termasuk semua sumber sitasi, deduplikasi per percobaan, respons tidak valid, dan URL belum diketahui. Protokol serta implikasi sampling tercatat di [CANDIDATE_UNION.md](MAIN_DATASET.md#gabungan-kandidat).
+
+## Pemeriksaan dan kelanjutan 11 September 2026
+
+Implementasi gabungan kandidat, notebook 04, dan dokumentasi telah selesai. Sesuai permintaan untuk melanjutkan, satu panggilan Gemini baru dikirim pada slot ketiga query `Fungsi Excel apa saja?`; API kembali mengembalikan HTTP 429 dengan status `RESOURCE_EXHAUSTED`. Tidak ada pencarian organik Google baru pada percobaan melanjutkan ini. API tidak memberikan rincian quota metric atau retry delay pada respons yang diterima, sehingga jenis batas (per menit/per hari/batas lain) belum dapat dipastikan.
+
+Ketiga slot query Excel sudah tercatat (satu respons valid, dua error 429); tidak ada percobaan keempat. Checkpoint dituntaskan secara lokal tanpa API. Jeda Google dan percobaan terakhir juga telah melampaui enam jam, sehingga query ini belum layak. Snapshot terbaru: 24 dari 41 query selesai diproses, 21 memenuhi minimal dua valid, 17 belum dimulai, dan 72 catatan percobaan. Tabel gabungan tetap 554 pasangan/515 URL kandidat unik. Selesai diproses tidak berarti semuanya berhasil atau siap pemodelan.
+
+Penyimpanan error ditambah dengan rincian kuota yang diizinkan bila tersedia (status, quota metric/ID/value, retry delay), tanpa URL permintaan, API key, pesan provider bebas, atau identitas akun/proyek. Error pada slot terakhir kini langsung menuntaskan status query agar resume tidak menganggapnya masih memerlukan percobaan. Sebanyak 31 tes lokal lulus. Pengumpulan berhenti setelah 429; periksa batas akun Gemini sebelum mencoba 17 query berikutnya. [Dokumentasi batas Gemini](https://ai.google.dev/gemini-api/docs/rate-limits) membedakan batas per menit, token, dan per hari; pergantian tanggal WIB tidak cukup untuk menyimpulkan kuota sudah reset.
+
+## Pemulihan pencarian SerpApi yang terputus
+
+Setelah peneliti melanjutkan, pencarian `vitamin C untuk apa fungsinya?` tercatat gagal koneksi tanpa respons lokal, sementara akun SerpApi menunjukkan 55/250 terpakai. Account API berhasil diakses dan menunjukkan 195 tersisa. Pemulihan satu permintaan identik berhasil mendapatkan respons Google tersimpan, dengan delapan hasil organik. Metadata mencatat waktu pemrosesan 52,49 detik, melampaui batas tunggu lama 45 detik; ini mendukung diagnosis timeout, meski jenis exception asli tidak tersimpan. Kuota sebelum/sesudah pemulihan tetap 55 terpakai dan 195 tersisa.
+
+`collect_paa.fetch` kini menunggu hingga 120 detik, mengklasifikasikan error jaringan, dan tetap memverifikasi TLS tanpa retry otomatis. `recover_main_google.py` memungkinkan pemulihan eksplisit satu query Google gagal yang belum memiliki respons/percobaan Gemini, dengan riwayat checkpoint, pemeriksaan kuota, cache default, dan waktu pencarian asli. Respons yang sudah tersimpan tidak dikirim ulang. Sebanyak 36 tes lokal lulus. Checkpoint vitamin C sudah `response_saved` dengan nol panggilan Gemini selama pemulihan; perintah kolektor biasa dapat melanjutkannya. Ekspor setelah pemulihan berisi 210 pasangan Google dan 562 pasangan gabungan; 24 query selesai diproses, satu menunggu resolusi/Gemini, dan 16 belum dimulai.
+
+## Pengumpulan main_01 selesai — 11 September 2026
+
+Peneliti melanjutkan skrip dan seluruh 41 query kini selesai diproses. Seluruh pengambilan Google berstatus completed dan tidak ada lock proses aktif. Terdapat 123 catatan percobaan Gemini: 114 valid (STOP dengan sitasi), tujuh selesai dengan MAX_TOKENS, dan dua error 429 yang tetap dipertahankan. Sebanyak 38 query memenuhi minimal dua valid dan jendela waktu pengumpulan.
+
+Hasil Google berisi 348 kemunculan organik. Gabungan Google dan sitasi valid menghasilkan **983 pasangan query–artikel dengan 903 URL kandidat unik**: 216 Google saja, 132 keduanya, dan 635 Gemini saja. Tabel sumber memiliki 1.360 kemunculan; 21 kemunculan sitasi belum memiliki URL tujuan. Angka URL unik berdasarkan normalisasi konservatif, belum membuktikan jumlah artikel unik/layak setelah crawling dan canonical.
+
+Dari tabel gabungan, 942 pasangan berasal dari 38 query yang memenuhi syarat. Di dalamnya, 757 pasangan mempunyai proporsi pasti tetapi ambang label belum ditetapkan, dan 185 masih memiliki ketidakpastian pencocokan URL. Sebanyak 41 pasangan lain berasal dari tiga query belum layak: `Gaji 6 juta pajak berapa?` (nol valid), `Rumus apa saja di Excel?` (satu valid), dan `Fungsi Excel apa saja?` (satu valid serta jeda melebihi enam jam). Tiga query tersebut tetap diarsipkan.
+
+Lihat notebook 04 dan `data/interim/main/main_01/queries.csv`, `query_article_pairs_union.csv`, serta `sources.csv`. Pengumpulan batch pertama selesai, sedangkan pengambilan isi artikel, seleksi halaman/bahasa, pencocokan URL lanjutan, keputusan ambang label, dan ekstraksi fitur masih diperlukan. Daftar 123 query tambahan tetap merupakan kandidat untuk batch berikutnya dan tidak tercakup dalam 41 query main_01 ini.
+
+
+## 11 September 2026 ? perapian proyek dan rencana pengolahan artikel
+
+- Menghapus sembilan cache `.pyc` dan empat panduan yang isinya telah digabungkan ke `docs/MAIN_DATASET.md` (protokol query asli, ekspansi query, gabungan kandidat, dan petunjuk penggabungan Trends dari `src/README.md`). Total 13 file dihapus; isi panduan dipertahankan dan tautannya diperbarui.
+- Mengisi README utama sebagai pintu masuk proyek. Data penelitian, konfigurasi, notebook, checkpoint, serta cadangan pemulihan dipertahankan. Modul pilot tetap diperlukan oleh kolektor utama.
+- Verifikasi: 36 pengujian unit lulus; tidak menjalankan pengumpulan API nyata atau menulis kode pipeline baru.
+- Prioritas berikut: unduh isi URL unik dengan checkpoint, tinjau kelayakan artikel, periksa alias/canonical dan pencocokan sitasi yang belum pasti, tetapkan ambang label sebelum pemodelan, lalu ekstrak fitur dan bentuk dataset siap pakai. Halaman gagal diakses tidak otomatis menjadi label negatif.
+- Pemisahan peran: Python untuk crawling, ekstraksi, pencocokan, serta ekspor yang dapat dilanjutkan; Jupyter untuk review artikel, distribusi domain/label, dan pemeriksaan kualitas.
+- Anggaran yang dilaporkan pengguna: Gemini Rp82.000; SerpApi 71/250 (diasumsikan 71 terpakai, sehingga tersisa 179). Pengambilan halaman langsung tidak memakai panggilan Gemini/SerpApi. Setelah jumlah artikel layak diketahui, pertimbangkan batch baru 15?30 query dari kandidat tambahan yang tersedia: maksimal 15?30 pencarian Google dan 45?90 percobaan Gemini. Periksa biaya aktual per blok kecil sebelum melanjutkan; belum ada pengeluaran baru yang dilakukan.

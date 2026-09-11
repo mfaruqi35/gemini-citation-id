@@ -1,0 +1,19 @@
+{
+  "batch_id": "paa_expansion_01",
+  "purpose": "Perluasan query asli untuk dataset utama: 10 topik Trends baru per domain, dipilih asisten untuk memperluas cakupan secara purposif. Teks Trends dipertahankan. Cadangan kuota juga menampung sisa batch main_01 yang berjalan.",
+  "max_searches": 30,
+  "quota_reserve": 180,
+  "parameters": {
+    "engine": "google",
+    "google_domain": "google.co.id",
+    "gl": "id",
+    "hl": "id",
+    "location": "Indonesia",
+    "device": "desktop"
+  },
+  "topics": {
+    "kesehatan": ["jantung", "paracetamol", "kista", "hiv", "herpes", "vertigo", "pneumonia", "abu vulkanik", "kunyit", "obat sakit gigi"],
+    "keuangan": ["bank indonesia", "bpjs ketenagakerjaan", "kur bri 2026", "ihsg", "investor", "bank", "coretax", "harga perak hari ini", "kurs dollar", "bank mandiri"],
+    "teknologi": ["word", "driver", "chrome", "spreadsheet", "microsoft", "qr", "chatgpt", "canva", "outlook", "oppo"]
+  }
+}

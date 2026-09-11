@@ -104,8 +104,9 @@ def build_plan(config):
 
 
 class GenerationError(RuntimeError):
-    def __init__(self, code):
+    def __init__(self, code, details=None):
         self.code = str(code)
+        self.details = details or {}
         super().__init__(f"Pemanggilan Gemini gagal ({self.code}); detail rahasia tidak dicetak.")
 
 
@@ -117,7 +118,24 @@ def generate(model, request, key):
         with urlopen(req, timeout=55) as response:
             payload = json.load(response)
     except HTTPError as error:
-        raise GenerationError(error.code) from None
+        # Retain only diagnostic quota fields; never persist request URLs, keys,
+        # arbitrary provider messages, or project/account identifiers.
+        diagnostic = {}
+        try:
+            failure = sanitize(json.loads(error.read(65536)), key).get('error', {})
+            diagnostic['status'] = failure.get('status', '')
+            violations = []
+            for detail in failure.get('details') or []:
+                if detail.get('@type', '').endswith('QuotaFailure'):
+                    for item in detail.get('violations') or []:
+                        violations.append({k: item[k] for k in ('quotaMetric', 'quotaId', 'quotaValue') if k in item})
+                elif detail.get('@type', '').endswith('RetryInfo'):
+                    diagnostic['retry_delay'] = detail.get('retryDelay', '')
+            if violations:
+                diagnostic['quota_violations'] = violations
+        except (ValueError, TypeError, AttributeError, OSError):
+            diagnostic = {}
+        raise GenerationError(error.code, diagnostic) from None
     except (URLError, TimeoutError, OSError):
         raise GenerationError("network_or_timeout") from None
     except (ValueError, UnicodeError):

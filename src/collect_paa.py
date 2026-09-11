@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import re
+import socket
+import ssl
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,16 +88,47 @@ def api_key():
     return key
 
 
-def fetch(endpoint, params, key):
+class SerpApiError(RuntimeError):
+    def __init__(self, code, message, details=None):
+        self.code = code
+        self.details = details or {}
+        super().__init__(message)
+
+
+def connection_failure(error):
+    """Classify connection problems without exposing authenticated URLs."""
+    reason = error.reason if isinstance(error, URLError) else error
+    if isinstance(reason, TimeoutError) or (isinstance(reason, str) and 'timed out' in reason.lower()):
+        code, message = 'timeout', 'batas waktu menunggu respons terlampaui'
+    elif isinstance(reason, socket.gaierror):
+        code, message = 'dns_error', 'alamat server gagal diterjemahkan oleh DNS'
+    elif isinstance(reason, ssl.SSLCertVerificationError):
+        code, message = 'tls_certificate_error', 'verifikasi sertifikat HTTPS gagal'
+    elif isinstance(reason, ssl.SSLError):
+        code, message = 'tls_error', 'koneksi HTTPS gagal'
+    elif isinstance(reason, ConnectionResetError):
+        code, message = 'connection_reset', 'koneksi diputus sebelum respons selesai'
+    else:
+        code, message = 'connection_error', 'koneksi jaringan gagal'
+    details = {'exception_type': type(reason).__name__}
+    for field in ('errno', 'winerror'):
+        value = getattr(reason, field, None)
+        if type(value) is int:
+            details[field] = value
+    return SerpApiError(code, f'SerpApi {code}: {message}; tidak ada retry otomatis.', details)
+
+
+def fetch(endpoint, params, key, timeout=120):
     # Never log the URL: authentication uses a query parameter.
     url = "https://serpapi.com/" + endpoint + "?" + urlencode({**params, "api_key": key})
     try:
-        with urlopen(url, timeout=45) as response:
+        with urlopen(url, timeout=timeout) as response:
             data = json.load(response)
     except HTTPError as error:
-        raise RuntimeError(f"SerpApi HTTP {error.code}; batch dihentikan.") from None
-    except (URLError, TimeoutError, OSError):
-        raise RuntimeError("Jaringan SerpApi gagal; tidak ada retry otomatis.") from None
+        raise SerpApiError('http_error', f"SerpApi HTTP {error.code}; batch dihentikan.",
+                           {'http_status': error.code}) from None
+    except (URLError, TimeoutError, OSError) as error:
+        raise connection_failure(error) from None
     except (ValueError, UnicodeError):
         raise RuntimeError("Respons SerpApi bukan JSON yang valid.") from None
     if not isinstance(data, dict):

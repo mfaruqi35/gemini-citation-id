@@ -1,9 +1,13 @@
 """Verifikasi pilot memakai respons simulasi; tidak memakai kuota API."""
 
 import copy
+import io
+import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
 from collections import Counter
 from pathlib import Path
 
@@ -59,6 +63,32 @@ class PilotTests(unittest.TestCase):
         _, _, web, cited, _ = pilot.grounding({"promptFeedback": {"blockReason": "SAFETY"}})
         self.assertFalse(web)
         self.assertFalse(cited)
+
+    def test_http_quota_diagnostics_exclude_secrets_and_provider_message(self):
+        payload = {'error': {'status': 'RESOURCE_EXHAUSTED', 'message': 'secret-key account data',
+                   'details': [{'@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+                                'violations': [{'quotaId': 'RequestsPerDay', 'quotaMetric': 'requests',
+                                                'quotaValue': '100', 'subject': 'private-project'}]},
+                               {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '60s'}]}}
+        error = HTTPError('https://example.com/?key=secret-key', 429, 'limited', {},
+                          io.BytesIO(json.dumps(payload).encode()))
+        with patch.object(pilot, 'urlopen', side_effect=error):
+            with self.assertRaises(pilot.GenerationError) as caught:
+                pilot.generate('test-model', {}, 'secret-key')
+        details = caught.exception.details
+        self.assertEqual(details['status'], 'RESOURCE_EXHAUSTED')
+        self.assertEqual(details['retry_delay'], '60s')
+        self.assertEqual(details['quota_violations'][0]['quotaId'], 'RequestsPerDay')
+        self.assertNotIn('private-project', json.dumps(details))
+        self.assertNotIn('secret-key', json.dumps(details))
+
+    def test_non_json_http_error_keeps_original_status(self):
+        error = HTTPError('https://example.com', 503, 'unavailable', {}, io.BytesIO(b'<html>error</html>'))
+        with patch.object(pilot, 'urlopen', side_effect=error):
+            with self.assertRaises(pilot.GenerationError) as caught:
+                pilot.generate('test-model', {}, 'secret-key')
+        self.assertEqual(caught.exception.code, '503')
+        self.assertEqual(caught.exception.details, {})
 
     def test_partial_resume_and_freeze(self):
         self.manifest["jobs"] = self.manifest["jobs"][:2]

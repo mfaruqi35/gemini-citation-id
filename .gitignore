@@ -1,5 +1,49 @@
-/venv
-/data
-/outputs
-CONTEXT.md
+# Lingkungan Python lokal
+/venv/
+/.venv/
+/env/
+
+# Data penelitian dan hasil eksekusi lokal
+/data/
+/outputs/
+/CONTEXT.md
+
+# Rahasia lokal; template konfigurasi tetap boleh masuk repo
 .env
+.env.*
+!.env.example
+!.env.sample
+
+# Cache dan bytecode Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# Checkpoint otomatis Jupyter (notebook utama tetap dilacak)
+.ipynb_checkpoints/
+
+# Hasil build Python
+/build/
+/dist/
+*.egg-info/
+
+# Log dan file sementara
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Pengaturan editor dan metadata sistem operasi
+/.vscode/
+/.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

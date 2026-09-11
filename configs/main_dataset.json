@@ -1,0 +1,24 @@
+{
+  "dataset_id": "main_01",
+  "query_csv": "data/interim/original_queries/accepted_unique.csv",
+  "model": "gemini-3.5-flash",
+  "repetitions": 3,
+  "min_valid_trials": 2,
+  "citation_threshold": null,
+  "max_serp_searches": 250,
+  "serp_quota_reserve": 10,
+  "serp_api_key_variable": "SERPAPI_API_KEY",
+  "google_parameters": {
+    "engine": "google",
+    "google_domain": "google.co.id",
+    "gl": "id",
+    "hl": "id",
+    "location": "Indonesia",
+    "device": "desktop"
+  },
+  "generation_config": {"temperature": 1.0, "maxOutputTokens": 4096, "candidateCount": 1},
+  "system_instruction": "Jawab pertanyaan pengguna dalam bahasa Indonesia.\n\nSebelum menjawab, gunakan Google Search untuk mencari sumber web yang relevan dengan pertanyaan. Dasarkan klaim faktual pada informasi yang ditemukan melalui pencarian dan sertakan sitasi yang menghubungkan klaim dengan sumber pendukungnya. Jangan menambahkan klaim faktual hanya berdasarkan ingatan jika tidak didukung sumber yang ditemukan. Jangan mengarang URL atau sitasi. Jika tidak memperoleh sumber pendukung, nyatakan bahwa informasi belum dapat diverifikasi melalui pencarian.",
+  "max_collection_gap_hours": 6,
+  "normalization_version": "conservative_v1",
+  "valid_trial_definition": "Respons STOP dengan teks, sumber web, dan hubungan sitasi web pada groundingSupports. Kegagalan resolusi ditangani sebagai ketidakpastian pencocokan, bukan label negatif."
+}
