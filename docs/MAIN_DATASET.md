@@ -317,3 +317,18 @@ ID dapat berubah jika urutan atau isi baris sumber diubah. Bekukan file masukan
 sebelum ID digunakan oleh tabel penilaian atau sintesis. Metadata kategori asli,
 periode, wilayah, dan tautan pengambilan belum ditambahkan karena belum tersedia
 di CSV masukan. File hasil dapat dibaca dari Jupyter dengan `pandas.read_csv`.
+
+
+## Ketentuan awal kredibilitas sumber
+
+Ketentuan awal tingkat kredibilitas sumber berdasarkan keputusan peneliti pada 11 September 2026:
+
+| Tingkat | Ketentuan |
+| ------- | --------- |
+| 1 | Domain resmi pemerintah (.go.id), atau institusi dengan status verifikasi tertinggi sesuai kriteria domainnya (rumah sakit terakreditasi KARS paripurna, lembaga jasa keuangan berizin penuh OJK). |
+| 2 | Terverifikasi resmi sesuai kriteria per domain tapi bukan kategori tertinggi (PSE terdaftar, Dewan Pers terverifikasi administratif dan faktual, rumah sakit terakreditasi non-paripurna). |
+| 3 | Portal dengan proses editorial/tinjauan ahli yang terlihat, tapi bukan institusi berstatus resmi sesuai kriteria di atas (contoh: portal kesehatan konsumer besar dengan tinjauan dokter). |
+| 4 | Situs dengan identitas jelas tapi tidak ditemukan status verifikasi resmi apa pun (blog bermerek, situs bisnis/UMKM). |
+| 5 | Tidak dapat diverifikasi sama sekali, atau UGC/forum tanpa identitas jelas. |
+
+Angka 1 menunjukkan tingkat tertinggi dan angka 5 tingkat terendah dalam rubrik penelitian ini. Rubrik merupakan ketentuan operasional peneliti, bukan klasifikasi resmi bersama dari lembaga-lembaga tersebut atau jaminan kebenaran isi artikel. Penerapannya harus disertai sumber bukti, tanggal pemeriksaan, dan alasan penetapan tingkat. Sumber yang belum diperiksa tetap berstatus belum ditinjau, bukan otomatis tingkat 5.

@@ -241,3 +241,15 @@ Lihat notebook 04 dan `data/interim/main/main_01/queries.csv`, `query_article_pa
 - Prioritas berikut: unduh isi URL unik dengan checkpoint, tinjau kelayakan artikel, periksa alias/canonical dan pencocokan sitasi yang belum pasti, tetapkan ambang label sebelum pemodelan, lalu ekstrak fitur dan bentuk dataset siap pakai. Halaman gagal diakses tidak otomatis menjadi label negatif.
 - Pemisahan peran: Python untuk crawling, ekstraksi, pencocokan, serta ekspor yang dapat dilanjutkan; Jupyter untuk review artikel, distribusi domain/label, dan pemeriksaan kualitas.
 - Anggaran yang dilaporkan pengguna: Gemini Rp82.000; SerpApi 71/250 (diasumsikan 71 terpakai, sehingga tersisa 179). Pengambilan halaman langsung tidak memakai panggilan Gemini/SerpApi. Setelah jumlah artikel layak diketahui, pertimbangkan batch baru 15?30 query dari kandidat tambahan yang tersedia: maksimal 15?30 pencarian Google dan 45?90 percobaan Gemini. Periksa biaya aktual per blok kecil sebelum melanjutkan; belum ada pengeluaran baru yang dilakukan.
+
+
+### Ketentuan awal kredibilitas sumber
+
+Peneliti menetapkan rubrik lima tingkat: (1) pemerintah atau institusi berstatus tertinggi sesuai kriteria; (2) verifikasi resmi kategori lain; (3) proses editorial/tinjauan ahli terlihat; (4) identitas jelas tanpa status verifikasi resmi yang ditemukan; (5) tidak dapat diverifikasi atau UGC/forum tanpa identitas jelas. Tabel lengkap dicatat di CONTEXT.md dan panduan dataset utama. Belum dilakukan penilaian situs atau perubahan kode/data. Sumber yang belum ditinjau dibedakan dari tingkat 5.
+
+
+### PAA ekspansi 02 ? pemakaian sisa kuota akun pertama
+
+Pada 11 September 2026 dijalankan 22 pencarian baru dari topik Trends needs_paa (7 kesehatan, 7 keuangan, 8 teknologi), tanpa mengulang request lama dan tanpa Gemini. Sebanyak 16 pencarian menghasilkan PAA dan 6 tidak memiliki PAA; tidak ada request gagal. Tersimpan 64 kemunculan pertanyaan. Kuota akun sebelum pengumpulan 22 (228/250 terpakai); setelahnya 0 (250/250 terpakai).
+
+Batch `paa_expansion_02` ditambahkan ke konfigurasi query ekspansi yang digunakan Notebook 05. Hasil ekspor menambah 64 kandidat unik berdasarkan query_id; kandidat baru belum ditinjau. Seluruh keputusan manual sebelumnya dipertahankan identik. Respons mentah, manifest, catatan kuota, dan CSV hasil tersimpan; batch utama main_01 tidak diubah.

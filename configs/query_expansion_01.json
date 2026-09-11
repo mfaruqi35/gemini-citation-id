@@ -1,7 +1,12 @@
 {
   "expansion_id": "query_expansion_01",
-  "main_batches": ["main_01"],
-  "paa_batches": ["paa_expansion_01"],
+  "main_batches": [
+    "main_01"
+  ],
+  "paa_batches": [
+    "paa_expansion_01",
+    "paa_expansion_02"
+  ],
   "existing_pool": "data/interim/original_queries/source_pool.csv",
   "note": "Kandidat tambahan terpisah dari main_01. PAA dari respons utama mempertahankan parent_query_id serta topic_id Trends. Seleksi asisten tanpa sintesis atau penerjemahan."
 }

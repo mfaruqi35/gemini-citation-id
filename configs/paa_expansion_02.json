@@ -1,0 +1,44 @@
+{
+  "batch_id": "paa_expansion_02",
+  "purpose": "Menggunakan sisa 22 pencarian akun pertama sesuai permintaan peneliti. Seleksi purposif topik Trends needs_paa yang belum dicari: 7 kesehatan, 7 keuangan, 8 teknologi; tanpa Gemini dan tanpa sintesis query.",
+  "max_searches": 22,
+  "quota_reserve": 0,
+  "parameters": {
+    "engine": "google",
+    "google_domain": "google.co.id",
+    "gl": "id",
+    "hl": "id",
+    "location": "Indonesia",
+    "device": "desktop"
+  },
+  "topics": {
+    "kesehatan": [
+      "obat mata",
+      "obat flu",
+      "ibuprofen",
+      "obat sariawan",
+      "obat diare",
+      "obat asam lambung",
+      "obat asam urat"
+    ],
+    "keuangan": [
+      "pembayaran",
+      "bca",
+      "bni",
+      "btn",
+      "bpjs kesehatan",
+      "harga bbm hari ini",
+      "harga emas perhiasan hari ini"
+    ],
+    "teknologi": [
+      "pdf to word",
+      "font",
+      "drive",
+      "whatsapp",
+      "gemini",
+      "gmail",
+      "proxy server",
+      "accurate"
+    ]
+  }
+}
