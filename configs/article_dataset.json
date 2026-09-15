@@ -1,0 +1,10 @@
+{
+  "dataset_id": "articles_main_01",
+  "source_batches": ["main_01"],
+  "timeout_seconds": 25,
+  "max_bytes": 5242880,
+  "per_host_delay_seconds": 1,
+  "user_agent": "CitationResearchBot/1.0 (academic article dataset)",
+  "respect_robots": true,
+  "min_words": 100
+}

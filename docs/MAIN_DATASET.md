@@ -1,5 +1,7 @@
 # Pengumpulan dataset utama
 
+**Rancangan aktif, 14 September 2026:** dataset pemodelan utama hanya kandidat **Google Top-10**, termasuk yang juga disitasi Gemini. Artikel `gemini_only` (disitasi di luar Top-10 pada query yang sama) menjadi dataset tambahan. Pengumpulan dan arsip URL gabungan tetap dipertahankan. Ekspor fitur menghasilkan `dataset.csv` untuk utama, `dataset_gemini_only.csv` untuk tambahan, dan `dataset_union.csv` untuk audit. `model_ready.csv` hanya berasal dari utama. Peneliti menegaskan kembali ambang label positif **proporsi sitasi >=0,5**. Bagian historis di bawah mencatat keputusan gabungan sebelumnya; lihat bagian scraping untuk keluaran aktif.
+
 Batch `main_01` melanjutkan sumber Trends/PAA yang sudah tersedia tanpa sintesis LLM. Keputusan peneliti pada 10 September 2026: **3 percobaan Gemini per query, minimal 2 percobaan valid**. Ini pengumpulan utama; tidak ada pilot tambahan.
 
 ## Cakupan dan anggaran
@@ -332,3 +334,73 @@ Ketentuan awal tingkat kredibilitas sumber berdasarkan keputusan peneliti pada 1
 | 5 | Tidak dapat diverifikasi sama sekali, atau UGC/forum tanpa identitas jelas. |
 
 Angka 1 menunjukkan tingkat tertinggi dan angka 5 tingkat terendah dalam rubrik penelitian ini. Rubrik merupakan ketentuan operasional peneliti, bukan klasifikasi resmi bersama dari lembaga-lembaga tersebut atau jaminan kebenaran isi artikel. Penerapannya harus disertai sumber bukti, tanggal pemeriksaan, dan alasan penetapan tingkat. Sumber yang belum diperiksa tetap berstatus belum ditinjau, bukan otomatis tingkat 5.
+
+<a id="scraping-dan-fitur"></a>
+
+## Scraping artikel dan dataset fitur
+
+Peneliti menetapkan cakupan gabungan Google Top-10 dan seluruh sitasi Gemini. Uji pertama pada 12 September 2026 mencoba **20 URL unik**, tidak mengganti URL gagal dengan URL lain. Sampel dipilih deterministik secara bergantian menurut domain, asal kandidat, dan query dari 870 URL/942 pasangan pada 38 query eligible. Sampel teknis ini bukan sampel acak yang mewakili populasi artikel.
+
+Jalankan dari root proyek dengan virtual environment aktif:
+
+```powershell
+python -m pip install -r requirements-articles.txt
+python src/scrape_articles.py --max-new-urls 20
+python src/scrape_articles.py --run --max-new-urls 20
+python src/build_article_dataset.py --with-embeddings
+```
+
+Perintah pertama scraper adalah preview tanpa jaringan. `--max-new-urls` membatasi URL tambahan pada satu eksekusi, bukan jumlah kumulatif. Menjalankan kembali perintah `--run` melanjutkan URL yang belum memiliki checkpoint. Untuk hanya mencoba ulang URL gagal secara sengaja, tambahkan `--retry-failed`; percobaan lama tetap tersimpan. Kegagalan ekstraksi yang HTML-nya tersedia cukup dipulihkan melalui builder, tanpa mengunduh ulang.
+
+Untuk mengambil 50 URL berikutnya, cukup ubah nilai batas:
+
+```powershell
+python src/scrape_articles.py --run --max-new-urls 50
+python src/build_article_dataset.py --with-embeddings
+```
+
+Alur interaktif tersedia di [Notebook 06](../notebooks/06_inspect_article_dataset.ipynb). Sakelar pengambilan dan pembangunan ulang default False, sehingga Run All tidak otomatis menambah request. Raw dan processed dipisahkan; `original_crawl_status` menunjukkan status saat request pertama, sedangkan `crawl_status` di processed mencerminkan pemulihan ekstraksi lokal.
+
+Untuk kelanjutan setelah pemisahan dataset, perintah builder tetap wajib setelah scraper jika memakai terminal. Builder memuat seluruh checkpoint batch, mengekspor utama/tambahan secara otomatis, dan mempertahankan baris gagal pada kelompok asalnya. Pada Notebook 06, RUN_SCRAPING=True otomatis menjalankan scraper lalu builder serta memuat ulang kedua kelompok. Pilihan batch dikendalikan satu variabel FEATURE_CONFIG; config scraping, folder hasil, dan argumen perintah mengikuti pilihan itu. Pengambilan ulang URL bersama dalam batch yang sama tidak diperlukan hanya untuk memasukkannya ke kelompok berbeda bagi query lain.
+
+### Berkas hasil
+
+| Berkas | Isi |
+| --- | --- |
+| `data/raw/articles/articles_main_01/manifest.json` | Daftar kandidat tetap, urutan pengambilan, provenance pasangan dan fingerprint sumber |
+| `data/raw/articles/articles_main_01/records/` | Checkpoint per URL dan riwayat percobaan |
+| `data/raw/articles/articles_main_01/html/` | Byte HTML yang diunduh, termasuk halaman error jika tersedia |
+| `data/interim/articles/articles_main_01/articles.csv` | Status seluruh kandidat, termasuk yang belum diminta |
+| `data/processed/articles_main_01/articles.csv` | Satu baris per URL yang sudah dicoba; metadata, teks dan fitur artikel |
+| `data/processed/articles_main_01/dataset.csv` | Dataset utama: pasangan Google Top-10 (`google_only` dan `google_and_gemini`), beserta label dan penanda termasuk yang belum layak |
+| `data/processed/articles_main_01/dataset_gemini_only.csv` | Dataset tambahan: pasangan sitasi Gemini di luar Top-10 untuk query yang sama |
+| `data/processed/articles_main_01/dataset_union.csv` | Arsip audit gabungan kedua kelompok, bukan masukan model utama |
+| `data/processed/articles_main_01/model_ready.csv` | Hanya pasangan Google Top-10 yang lolos pemeriksaan artikel, label, embedding, alias URL dan kredibilitas |
+| `data/processed/articles_main_01/feature_columns.json` | Daftar fitur masukan yang diizinkan serta target dan kolom audit |
+| `data/manual/article_review.csv` | Keputusan jenis halaman/bahasa beserta alasan dan penilai |
+| `data/manual/source_credibility.csv` | Tingkat kredibilitas, status verifikasi, bukti dan tanggal pemeriksaan per host |
+| `data/raw/credibility/` | Snapshot pencarian registrasi PSE publik; tanpa SerpApi |
+
+### Definisi fitur contoh versi 1
+
+- Struktur: jumlah kata, kalimat, karakter alfanumerik, paragraf, heading H1-H6 dalam badan tulisan, daftar, item daftar, tabel, gambar, rata-rata panjang paragraf, dan paragraf per 100 kata. Judul utama disimpan sebagai metadata; heading di luar subtree artikel tidak dihitung sebagai heading badan tulisan.
+- Kualitas permukaan: kemunculan angka, persentase, blockquote, rentang teks dalam tanda kutip, serta tautan eksternal pada badan artikel. Ini indikator penyajian, bukan verifikasi statistik, kutipan, atau kualitas faktual.
+- Keterbacaan: `wps = word_count / sentence_count` dan `cpw = char_count / word_count`. Token memakai normalisasi NFKC, casefold, serta kata Unicode; karakter hanya huruf/angka dalam token. Pemisahan kalimat menggunakan tanda akhir dan baris baru, sehingga singkatan atau daftar dapat memengaruhi hitungan. Tidak memakai Flesch/ARI/suku kata.
+- Metadata: keberadaan penulis/tanggal publikasi/pembaruan, serta umur publikasi dalam hari terhadap waktu pengambilan. Tanggal disalin dari metadata penerbit; tanggal yang tidak dapat dibaca atau berada di masa depan tidak diberi umur palsu. Metadata yang tidak tersedia tetap ditandai hilang.
+- Kredibilitas: tingkat 1-5 sesuai rubrik peneliti. `verified` berarti bukti mendukung pemetaan; `provisional` adalah nilai sementara yang belum boleh masuk model_ready. Kosong dengan status needs_verification/needs_rubric_mapping tetap kosong, bukan 5. Contoh universitas memerlukan keputusan pemetaan rubrik; status institusi pendidikan tidak otomatis disamakan dengan KARS/OJK/PSE/Dewan Pers.
+- Leksikal: mulai pemisahan 14 September, statistik BM25 dipelajari dari judul + teks artikel eligible yang masuk Google Top-10 pada setidaknya satu pasangan dalam snapshot, k1=1,5 dan b=0,75, tanpa stemming/stopword. Artikel yang hanya ada di tambahan tidak menambah statistik IDF/panjang rata-rata. Kedua kelompok diberi skor dengan korpus referensi utama yang sama; istilah di luar kosakata referensi tidak berkontribusi. Jika korpus utama kosong, skor dikosongkan dan kesiapan ditunda. Hash/ukuran/scope korpus dicatat; pada contoh 20 URL terdapat 10 artikel referensi utama. Saat korpus utama bertambah, builder menghitung ulang skor. Sebelum evaluasi, bekukan korpus dan tentukan pembelajaran IDF dari data latih; contoh ini belum evaluasi bebas kebocoran.
+- Semantik: cosine similarity dari model `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, ONNX kuantisasi melalui FastEmbed 0.8.0, 384 dimensi. Judul + isi dibagi menjadi potongan maksimal 112 token dengan overlap 16; vektor tiap potongan dinormalisasi, dirata-ratakan, lalu dinormalisasi lagi. Query memakai tokenizer/representasi yang sama; seluruh isi diwakili, tidak hanya paragraf pertama. Model tidak membutuhkan prefix query/passage. Cache menyimpan vektor berdasarkan teks dan pengaturan; manifest menyimpan SHA-256 artefak model. Rujukan: [model](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2), [implementasi FastEmbed](https://github.com/qdrant/fastembed/blob/main/fastembed/text/pooled_embedding.py).
+
+Nilai fitur yang belum dapat dihitung dibiarkan kosong. `model_ready.csv` hanya berisi pasangan utama dengan fitur yang diperbolehkan beserta identitas dan target; identitas/query_id/domain bukan otomatis masukan model. `candidate_origin`, posisi Google, jumlah sitasi, kelompok dataset dan informasi hasil crawling tidak dimasukkan sebagai fitur prediksi. Pemisahan dilakukan per pasangan query-artikel, bukan dengan menghapus suatu URL dari seluruh dataset hanya karena menjadi `gemini_only` untuk query lain. `ready_for_analysis` menunjukkan pemeriksaan lengkap pada masing-masing kelompok; `ready_for_model` hanya True untuk kelompok utama yang lolos. Tambahan diberi alasan `supplement_not_primary` agar tidak masuk model utama.
+
+### Label, inspeksi halaman, dan batas contoh
+
+Peneliti menyetujui **citation_proportion >=0,5** untuk label positif pada dataset contoh: satu dari dua atau dua dari tiga percobaan valid. Sumber yang disitasi sekali dari tiga valid tetap memiliki label 0 menurut ambang ini. Pencocokan tidak pasti, query tidak eligible, atau alias yang perlu diperiksa tidak dipaksa menjadi contoh negatif. Label menggambarkan keterkutipan pada pengamatan yang tersimpan, bukan aturan internal Gemini atau keterkutipan sepanjang waktu.
+
+HTML diperiksa dan selector disesuaikan untuk Pegadaian (`#default .default-content`), KAPZ (`.post_text_inner`), DQLab (`#content-desc`), Google Help (`.article-content-container .cc`), Eka Hospital (`.grow .content`), DJP (`article` dengan label field dibuang), dan Kemenkes (`#isi-lengkap`). Situs lain memakai subtree artikel generik atau fallback Trafilatura, dicatat pada extraction_method. Halaman Kemenkes memiliki teks penuh dalam DOM untuk tombol selengkapnya; tidak ada bypass autentikasi. Metadata bahasa Inggris pada beberapa situs tidak sesuai dengan teks Indonesia; hasil review isi dicatat di CSV manual. Halaman panduan institusi dan bantuan produk termasuk artikel informasional; listing aplikasi, video saja, homepage, dan halaman non-Indonesia dikeluarkan.
+
+Hasil awal: **20 URL dicoba; 17 berhasil diekstrak; 15 artikel Indonesia diterima; 2 halaman dikeluarkan** (listing Google Play dan artikel Yahoo berbahasa Inggris). Tiga URL belum dapat diambil: Bio Farma dan account.pajak.go.id (`robots_unavailable`), Facebook (`robots_disallowed`). Status tersebut menggambarkan upaya crawler, bukan memastikan URL mati atau mustahil dibuka di browser.
+
+Terdapat **24 pasangan query-artikel**: setelah pemisahan 14 September, **13 utama** (4 positif, 6 negatif, 3 belum pasti) dan **11 tambahan** (5 positif, 5 negatif menurut ambang >=0,5, 1 belum pasti). Pada tambahan, label 0 tetap mungkin karena satu sitasi dari tiga valid belum mencapai 0,5; keanggotaan tambahan menunjukkan pernah disitasi, bukan otomatis melampaui ambang. **Tiga pasangan utama** lolos untuk model (2 positif, 1 negatif); empat pasangan tambahan lolos pemeriksaan untuk analisis tambahan. Peringkat kredibilitas sementara/yang belum dapat dipetakan tetap memblokir kesiapan. Data kecil ini berguna untuk pemeriksaan alur, bukan pelatihan/evaluasi penelitian final. Review artikel dan kredibilitas dilakukan asisten berbantuan bukti, belum merupakan validasi manusia independen. Urutan sampel scraping awal masih berasal dari manifest gabungan yang dibekukan; pemisahan ini tidak menjadikannya sampel Google acak atau lengkap per query.
+
+Scraping ini dilakukan setelah pengumpulan Gemini; isi web mungkin berubah di antara kedua waktu itu. HTML, timestamp, dan hash disimpan agar perbedaan snapshot dapat diaudit. Canonical/final URL disimpan sebagai bukti; alias tidak otomatis digabungkan atau mengubah label. Pada batch selanjutnya, gunakan prosedur yang sama dan catat versi konfigurasi. Untuk menambah sumber `main_02`, buat konfigurasi dataset_id baru dengan source_batches yang sesuai; manifest lama tidak diubah.
