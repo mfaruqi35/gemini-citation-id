@@ -321,7 +321,18 @@ periode, wilayah, dan tautan pengambilan belum ditambahkan karena belum tersedia
 di CSV masukan. File hasil dapat dibaca dari Jupyter dengan `pandas.read_csv`.
 
 
-## Ketentuan awal kredibilitas sumber
+## Otoritas domain aktif dan rubrik historis
+
+Mulai 17 September 2026, fitur aktif adalah `domain_authority_level` biner:
+
+| Level | Ketentuan |
+| --- | --- |
+| 2 (tinggi) | Rumah sakit/klinik yang jelas; lembaga keuangan terafiliasi institusi berizin OJK; perusahaan/platform teknologi terdaftar PSE; suffix `.ac.id`/`.go.id`; atau media besar yang jelas kredibel. |
+| 1 (default/rendah) | Semua lainnya, termasuk yang tidak jelas atau ambigu. |
+
+Suffix pemerintah/akademik diterapkan otomatis. Host Level 2 selain suffix dicatat dalam `configs/domain_authority.json`. Host yang tidak tercantum otomatis Level 1; tidak ada nilai kosong, provisional, atau pemblokiran model karena verifikasi otoritas. Ini indikator afiliasi domain, bukan jaminan kebenaran artikel. Rubrik berikut adalah **riwayat yang sudah digantikan**, bukan fitur aktif.
+
+Ekspor lengkap juga menyimpan `credibility_evidence` dan `credibility_reason` sebagai metadata audit. Jika hostname pernah diperiksa dalam `data/manual/source_credibility.csv`, builder menyalin `evidence_urls` dan `reason` mentah dari pemeriksaan tersebut. Untuk host Level 2 tanpa catatan lama, URL final yang diamati menjadi bukti awal dan alasan dibuat dari aturan biner yang cocok. Host Level 1 tanpa catatan lama memiliki bukti kosong dan alasan default. Kedua kolom audit ini tidak masuk `model_ready.csv`, tidak menjadi prediktor, tidak menentukan label sitasi, dan tidak memblokir kelayakan artikel. `domain_authority_basis` tetap menjelaskan aturan biner aktif; catatan kredibilitas lama dapat memakai istilah rubrik 1–5 historis sehingga tidak boleh dibaca sebagai level aktif.
 
 Ketentuan awal tingkat kredibilitas sumber berdasarkan keputusan peneliti pada 11 September 2026:
 
@@ -375,11 +386,12 @@ Untuk kelanjutan setelah pemisahan dataset, perintah builder tetap wajib setelah
 | `data/processed/articles_main_01/dataset.csv` | Dataset utama: pasangan Google Top-10 (`google_only` dan `google_and_gemini`), beserta label dan penanda termasuk yang belum layak |
 | `data/processed/articles_main_01/dataset_gemini_only.csv` | Dataset tambahan: pasangan sitasi Gemini di luar Top-10 untuk query yang sama |
 | `data/processed/articles_main_01/dataset_union.csv` | Arsip audit gabungan kedua kelompok, bukan masukan model utama |
-| `data/processed/articles_main_01/model_ready.csv` | Hanya pasangan Google Top-10 yang lolos pemeriksaan artikel, label, embedding, alias URL dan kredibilitas |
+| `data/processed/articles_main_01/model_ready.csv` | Hanya pasangan Google Top-10 yang lolos pemeriksaan artikel, label, embedding, dan alias URL |
 | `data/processed/articles_main_01/feature_columns.json` | Daftar fitur masukan yang diizinkan serta target dan kolom audit |
 | `data/manual/article_review.csv` | Keputusan jenis halaman/bahasa beserta alasan dan penilai |
-| `data/manual/source_credibility.csv` | Tingkat kredibilitas, status verifikasi, bukti dan tanggal pemeriksaan per host |
-| `data/raw/credibility/` | Snapshot pencarian registrasi PSE publik; tanpa SerpApi |
+| `configs/domain_authority.json` | Aturan biner, suffix otomatis, dan daftar host Level 2 |
+| `data/manual/source_credibility.csv` | Arsip historis rubrik 1–5; tidak lagi dibaca builder atau menjadi fitur model |
+| `data/raw/credibility/` | Arsip historis snapshot pencarian PSE publik; tanpa SerpApi |
 
 ### Definisi fitur contoh versi 1
 
@@ -387,7 +399,7 @@ Untuk kelanjutan setelah pemisahan dataset, perintah builder tetap wajib setelah
 - Kualitas permukaan: kemunculan angka, persentase, blockquote, rentang teks dalam tanda kutip, serta tautan eksternal pada badan artikel. Ini indikator penyajian, bukan verifikasi statistik, kutipan, atau kualitas faktual.
 - Keterbacaan: `wps = word_count / sentence_count` dan `cpw = char_count / word_count`. Token memakai normalisasi NFKC, casefold, serta kata Unicode; karakter hanya huruf/angka dalam token. Pemisahan kalimat menggunakan tanda akhir dan baris baru, sehingga singkatan atau daftar dapat memengaruhi hitungan. Tidak memakai Flesch/ARI/suku kata.
 - Metadata: keberadaan penulis/tanggal publikasi/pembaruan, serta umur publikasi dalam hari terhadap waktu pengambilan. Tanggal disalin dari metadata penerbit; tanggal yang tidak dapat dibaca atau berada di masa depan tidak diberi umur palsu. Metadata yang tidak tersedia tetap ditandai hilang.
-- Kredibilitas: tingkat 1-5 sesuai rubrik peneliti. `verified` berarti bukti mendukung pemetaan; `provisional` adalah nilai sementara yang belum boleh masuk model_ready. Kosong dengan status needs_verification/needs_rubric_mapping tetap kosong, bukan 5. Contoh universitas memerlukan keputusan pemetaan rubrik; status institusi pendidikan tidak otomatis disamakan dengan KARS/OJK/PSE/Dewan Pers.
+- Otoritas domain: `domain_authority_level=2` untuk kategori tinggi sesuai aturan biner dan `1` sebagai default/rendah. `domain_authority_basis`, versi aturan, `credibility_evidence`, dan `credibility_reason` disimpan untuk audit, tetapi hanya `domain_authority_level` menjadi prediktor. Domain baru yang tidak tercantum langsung Level 1. Tidak ada pemeriksaan KARS rinci, skala 1–5, atau status provisional pada fitur aktif.
 - Leksikal: mulai pemisahan 14 September, statistik BM25 dipelajari dari judul + teks artikel eligible yang masuk Google Top-10 pada setidaknya satu pasangan dalam snapshot, k1=1,5 dan b=0,75, tanpa stemming/stopword. Artikel yang hanya ada di tambahan tidak menambah statistik IDF/panjang rata-rata. Kedua kelompok diberi skor dengan korpus referensi utama yang sama; istilah di luar kosakata referensi tidak berkontribusi. Jika korpus utama kosong, skor dikosongkan dan kesiapan ditunda. Hash/ukuran/scope korpus dicatat; pada contoh 20 URL terdapat 10 artikel referensi utama. Saat korpus utama bertambah, builder menghitung ulang skor. Sebelum evaluasi, bekukan korpus dan tentukan pembelajaran IDF dari data latih; contoh ini belum evaluasi bebas kebocoran.
 - Semantik: cosine similarity dari model `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, ONNX kuantisasi melalui FastEmbed 0.8.0, 384 dimensi. Judul + isi dibagi menjadi potongan maksimal 112 token dengan overlap 16; vektor tiap potongan dinormalisasi, dirata-ratakan, lalu dinormalisasi lagi. Query memakai tokenizer/representasi yang sama; seluruh isi diwakili, tidak hanya paragraf pertama. Model tidak membutuhkan prefix query/passage. Cache menyimpan vektor berdasarkan teks dan pengaturan; manifest menyimpan SHA-256 artefak model. Rujukan: [model](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2), [implementasi FastEmbed](https://github.com/qdrant/fastembed/blob/main/fastembed/text/pooled_embedding.py).
 
@@ -401,6 +413,6 @@ HTML diperiksa dan selector disesuaikan untuk Pegadaian (`#default .default-cont
 
 Hasil awal: **20 URL dicoba; 17 berhasil diekstrak; 15 artikel Indonesia diterima; 2 halaman dikeluarkan** (listing Google Play dan artikel Yahoo berbahasa Inggris). Tiga URL belum dapat diambil: Bio Farma dan account.pajak.go.id (`robots_unavailable`), Facebook (`robots_disallowed`). Status tersebut menggambarkan upaya crawler, bukan memastikan URL mati atau mustahil dibuka di browser.
 
-Terdapat **24 pasangan query-artikel**: setelah pemisahan 14 September, **13 utama** (4 positif, 6 negatif, 3 belum pasti) dan **11 tambahan** (5 positif, 5 negatif menurut ambang >=0,5, 1 belum pasti). Pada tambahan, label 0 tetap mungkin karena satu sitasi dari tiga valid belum mencapai 0,5; keanggotaan tambahan menunjukkan pernah disitasi, bukan otomatis melampaui ambang. **Tiga pasangan utama** lolos untuk model (2 positif, 1 negatif); empat pasangan tambahan lolos pemeriksaan untuk analisis tambahan. Peringkat kredibilitas sementara/yang belum dapat dipetakan tetap memblokir kesiapan. Data kecil ini berguna untuk pemeriksaan alur, bukan pelatihan/evaluasi penelitian final. Review artikel dan kredibilitas dilakukan asisten berbantuan bukti, belum merupakan validasi manusia independen. Urutan sampel scraping awal masih berasal dari manifest gabungan yang dibekukan; pemisahan ini tidak menjadikannya sampel Google acak atau lengkap per query.
+Terdapat **24 pasangan query-artikel** pada snapshot historis 20 URL: setelah pemisahan 14 September, **13 utama** dan **11 tambahan**. Angka kesiapan pada catatan historis masih memakai rubrik lama. Setelah aturan biner 17 September diterapkan, otoritas domain tidak lagi memblokir kesiapan; artikel, label, embedding, dan alias tetap diperiksa. Hasil aktual selalu dibaca dari `summary.json`. Data bertahap ini berguna untuk pemeriksaan alur, bukan otomatis pelatihan/evaluasi final. Urutan sampel scraping tetap berasal dari manifest gabungan yang dibekukan; pemisahan tidak menjadikannya sampel Google acak atau lengkap per query.
 
 Scraping ini dilakukan setelah pengumpulan Gemini; isi web mungkin berubah di antara kedua waktu itu. HTML, timestamp, dan hash disimpan agar perbedaan snapshot dapat diaudit. Canonical/final URL disimpan sebagai bukti; alias tidak otomatis digabungkan atau mengubah label. Pada batch selanjutnya, gunakan prosedur yang sama dan catat versi konfigurasi. Untuk menambah sumber `main_02`, buat konfigurasi dataset_id baru dengan source_batches yang sesuai; manifest lama tidak diubah.

@@ -1,5 +1,43 @@
 # Panduan menambah dataset: PAA sampai artikel dan fitur
 
+## Lanjutan siap jalan: main_02 (17 September 2026)
+
+### Recovery Gemini timeout/jaringan
+
+Timeout request Gemini sekarang 120 detik (sebelumnya 55 detik). Error baru dibedakan menjadi `timeout` dan `network_error`; error historis `network_or_timeout` tetap dikenali. Recovery harus dipilih dengan flag/perintah berikut, dan maksimal satu retry per slot percobaan sepanjang riwayat checkpoint.
+
+Untuk memulihkan maksimal dua slot gagal dahulu, kemudian melanjutkan maksimal 30 query yang belum selesai:
+
+```powershell
+python src/continue_main_dataset.py --run --recover-gemini --max-recovery-calls 2 --max-queries 30 --check-every 5
+```
+
+Untuk preview atau recovery saja, tanpa melanjutkan query baru:
+
+```powershell
+python src/recover_main_gemini.py
+python src/recover_main_gemini.py --run --max-new-calls 2
+```
+
+Preview tidak memakai API. Recovery saja memakai Gemini dan tidak melakukan pencarian SerpApi. Flag pada runner juga memeriksa Account API SerpApi serta rekap token sebelum/sesudah recovery. Timeout sebelumnya mungkin sudah diproses/ditagihkan di server meskipun respons tidak diterima; total token lokal hanya menghitung respons yang tersimpan.
+
+Recovery mempertahankan respons sukses, Google lama, ID/repetition, dan arsip kegagalan di `recovery_history` pada JSON query. Waktu retry dicatat sebagai waktu percobaan aktif, sehingga validasi jendela waktu tidak memakai timestamp lama secara keliru. Jumlah slot penelitian tetap tiga; riwayat retry bukan ulangan tambahan untuk menghitung proporsi sitasi. Retry tidak dijalankan untuk respons selesai yang tidak memenuhi valid grounding, error billing/429, atau `started` dengan hasil tidak pasti. File `.tmp` dan lock mencegah recovery sampai diperiksa.
+
+`collection_window_expired` berarti waktu recovery akan melewati jendela 6 jam sejak pengumpulan terkait; skrip melewatinya. Query itu perlu pengumpulan ulang terencana dengan Google dan Gemini pada batch baru bila ingin dipakai, bukan mengubah timestamp atau memperpanjang jendela batch lama. `retry_limit_reached` berarti jatah satu retry slot tersebut sudah dipakai. Jika retry gagal lagi, proses berhenti dan riwayat tetap tersedia. Command tanpa `--recover-gemini` hanya melanjutkan slot/query yang belum dijalankan, tidak mengulang slot berstatus error.
+
+Snapshot `data/manual/main_02_queries.csv` berisi 265 query accepted yang belum ada pada manifest lama: 115 kesehatan, 92 keuangan, dan 58 teknologi. Konfigurasi `configs/main_dataset_02.json` mempertahankan model, prompt, tiga percobaan, minimal dua valid, serta parameter pencarian batch awal; ambang label ditetapkan 0,5.
+
+```powershell
+python src/continue_main_dataset.py
+python src/continue_main_dataset.py --run --max-queries 10 --check-every 5
+```
+
+Perintah pertama menyiapkan/memeriksa snapshot lokal. Perintah kedua melanjutkan maksimal 10 query yang belum selesai, dengan pemeriksaan SerpApi dan rekap token Gemini tiap 5 query. Jalankan satu proses saja. Query selesai dilewati; checkpoint gagal/tidak pasti memerlukan pemeriksaan sebelum retry. Batas `--max-queries` adalah per eksekusi, bukan target total batch.
+
+Pemantauan tersimpan di `data/raw/main/main_02/usage_latest.json` dan `usage_history/`. Token berasal dari `usageMetadata` respons Gemini dan hanya mencakup batch ini; bukan sisa saldo rupiah, bukan total seluruh akun, dan tidak memastikan biaya grounding. Saldo/billing tetap diperiksa di AI Studio. Kuota SerpApi dibaca dari Account API, dengan cadangan 10 pencarian. Proses berhenti saat kuota tidak cukup atau API gagal. Pengumpulan memakai kuota SerpApi serta token/biaya Gemini; belum melakukan scraping isi artikel. Hasil URL berada di `data/interim/main/main_02/`.
+
+Manifest scraping lama tetap untuk `main_01`. Setelah pengumpulan baru selesai, buat konfigurasi scraping dengan ID baru untuk mengonsumsi `main_02`; jangan mengubah manifest scraping lama yang sudah berjalan.
+
 Panduan ini mengikuti skrip proyek, diperbarui **14 September 2026**. Semua perintah dijalankan dari direktori utama proyek. Contoh nama batch baru di bawah adalah nama yang perlu kamu buat sendiri, bukan batch yang otomatis sudah tersedia. Menulis panduan ini tidak menjalankan pengumpulan berbayar.
 
 **Pemisahan aktif:** dataset utama adalah artikel Google Top-10 dengan label sitasi Gemini pada ambang >=0,5. Sitasi Gemini di luar Top-10 menjadi dataset tambahan. Skrip scraping tetap memakai daftar URL gabungan untuk mengumpulkan keduanya; builder memisahkan ekspornya secara otomatis. Tidak perlu menjalankan scraper dua kali untuk masing-masing kelompok.
@@ -8,7 +46,7 @@ Panduan ini mengikuti skrip proyek, diperbarui **14 September 2026**. Semua peri
 
 Alur penelitian:
 
-**Keyword Google Trends → pertanyaan PAA → review query → Google Top-10 + tiga jawaban Gemini → gabungan URL → scraping → review artikel/kredibilitas → fitur dan label → dataset utama Top-10 + dataset tambahan Gemini-only.**
+**Keyword Google Trends → pertanyaan PAA → review query → Google Top-10 + tiga jawaban Gemini → gabungan URL → scraping → review artikel + otoritas domain biner → fitur dan label → dataset utama Top-10 + dataset tambahan Gemini-only.**
 
 | Kebutuhanmu | Mulai dari |
 | --- | --- |
@@ -36,7 +74,7 @@ Istilah SerpApi yang tepat adalah **kredit/kuota pencarian**, sedangkan Gemini m
 | `collect_main_dataset.py --export-only` | Tidak | Tidak | Ekspor respons tersimpan |
 | Mengunduh halaman URL melalui scraper | Tidak | Tidak | Akses langsung website; memakai internet dan penyimpanan |
 | Ekstraksi teks, fitur, BM25, dan embedding lokal | Tidak | Tidak | Model embedding diunduh jika belum ada; komputasi CPU lokal |
-| Review kredibilitas lewat bukti publik/browser | Tidak | Tidak | Skrip PSE yang tersedia mengakses layanan publik langsung |
+| Penetapan otoritas domain biner | Tidak | Tidak | Suffix dan daftar host dibaca dari konfigurasi lokal; host lain otomatis Level 1 |
 | Retry scraping URL gagal | Tidak | Tidak | Tetap mengikuti aturan akses website |
 | Mengulang pencarian Google atau panggilan Gemini | Bisa memakai lagi | Bisa memakai lagi | Bergantung layanan yang benar-benar dipanggil |
 
@@ -343,11 +381,11 @@ python src/build_article_dataset.py --config configs/article_features_02.json --
 
 Di mode retry, angka 3 membatasi percobaan ulang, bukan mengambil tiga URL baru. Riwayat lama dipertahankan, aturan robots tetap diperiksa. Periksa `original_crawl_status` juga: error ekstraksi awal yang sudah pulih di hasil processed masih dapat dipilih retry berdasarkan checkpoint mentah. Untuk HTML yang sudah tersedia, cukup jalankan builder lebih dahulu agar tidak mengunduh ulang tanpa perlu.
 
-## 9. Review artikel, kredibilitas, fitur, dan label
+## 9. Review artikel, otoritas domain, fitur, dan label
 
 **Biaya: tidak memakai kedua API dengan alat lokal yang tersedia.**
 
-Buka `notebooks/06_inspect_article_dataset.ipynb`. Untuk batch baru, ubah **hanya `FEATURE_CONFIG`** pada sel pemuatan, misalnya menjadi `ROOT / 'configs/article_features_02.json'`, lalu jalankan ulang sel pemuatan. Config scraping, folder hasil, CSV kredibilitas, serta perintah scraping/build otomatis mengikuti config fitur tersebut. Jangan mengganti `OUTPUT` secara terpisah. Contoh artikel memilih Alodokter jika tersedia, atau artikel pertama pada batch; `ARTICLE_ID` tetap boleh kamu ganti untuk inspeksi. Untuk batch yang belum memiliki ekspor artikel sama sekali, jalankan terminal bagian 8 terlebih dahulu sebelum membaca tabel di notebook.
+Buka `notebooks/06_inspect_article_dataset.ipynb`. Untuk batch baru, ubah **hanya `FEATURE_CONFIG`** pada sel pemuatan, misalnya menjadi `ROOT / 'configs/article_features_02.json'`, lalu jalankan ulang sel pemuatan. Config scraping, folder hasil, config otoritas domain, serta perintah scraping/build otomatis mengikuti config fitur tersebut. Jangan mengganti `OUTPUT` secara terpisah. Contoh artikel memilih Alodokter jika tersedia, atau artikel pertama pada batch; `ARTICLE_ID` tetap boleh kamu ganti untuk inspeksi. Untuk batch yang belum memiliki ekspor artikel sama sekali, jalankan terminal bagian 8 terlebih dahulu sebelum membaca tabel di notebook.
 
 Periksa teks, judul, bahasa, dan jenis halaman. Pastikan isi bukan menu, ringkasan terpotong, halaman tantangan, listing aplikasi, atau halaman non-artikel. Website baru mungkin memerlukan penyesuaian ekstraktor jika template umumnya tidak cukup; skrip reusable tidak menjamin setiap situs berhasil tanpa penyesuaian.
 
@@ -356,21 +394,19 @@ Edit CSV review dengan mempertahankan header dan baris lama:
 | File | Kolom yang kamu isi |
 | --- | --- |
 | `data/manual/article_review.csv` | `article_id,status,language,reason,reviewer,reviewed_at` |
-| `data/manual/source_credibility.csv` | `hostname,credibility_level,review_status,source_category,evidence_urls,checked_at,reason,reviewer` |
 
-Untuk artikel, gunakan `accepted`/`excluded` dan `language=id` jika isi Indonesia. Satu keputusan per `article_id`. Untuk sumber, satu baris per hostname; `www.example.com` dan `example.com` tidak otomatis sama dalam tabel review ini. Gunakan editor CSV yang mempertahankan UTF-8 dan tanda kutip pada nilai yang mengandung koma.
+Untuk artikel, gunakan `accepted`/`excluded` dan `language=id` jika isi Indonesia. Satu keputusan per `article_id`. Gunakan editor CSV yang mempertahankan UTF-8 dan tanda kutip pada nilai yang mengandung koma.
 
-Rubrik kredibilitas:
+Otoritas domain tidak memerlukan review satu per satu. Aturannya:
 
-| Tingkat | Kriteria |
+| Level | Kriteria |
 | --- | --- |
-| 1 | Pemerintah .go.id atau status tertinggi sesuai domain, misalnya KARS paripurna atau izin penuh OJK |
-| 2 | Verifikasi resmi selain kategori tertinggi: PSE, Dewan Pers administratif dan faktual, KARS non-paripurna |
-| 3 | Proses editorial/tinjauan ahli terlihat tanpa status resmi yang sesuai kategori di atas |
-| 4 | Identitas situs jelas, tetapi status verifikasi resmi tidak ditemukan setelah pemeriksaan yang memadai |
-| 5 | Tidak dapat diverifikasi sama sekali atau UGC/forum tanpa identitas jelas |
+| 2 | Rumah sakit/klinik jelas; afiliasi lembaga OJK; perusahaan/platform teknologi PSE; `.ac.id`/`.go.id`; media besar yang jelas kredibel |
+| 1 | Semua lainnya, termasuk status tidak jelas atau ambigu |
 
-Catat bukti, tanggal, alasan, dan identitas penilai. Isi `review_status=verified` jika bukti mendukung pemetaan tingkat, `provisional` untuk sementara, `needs_verification` jika belum cukup bukti, atau `needs_rubric_mapping` jika jenis institusi belum tercakup. Belum diperiksa tidak otomatis tingkat 5. Jangan memakai status verified hanya supaya baris masuk dataset model.
+Suffix `.ac.id`/`.go.id` diproses otomatis. Untuk menambah host jelas Level 2 dari kategori lain, edit `configs/domain_authority.json` pada `level_2_hosts` dan berikan basis yang sesuai. Semua host yang tidak tercantum otomatis Level 1; tidak ada status provisional dan file `data/manual/source_credibility.csv` hanya menjadi arsip historis rubrik lama.
+
+Builder juga menyalin `evidence_urls` dan `reason` dari arsip tersebut menjadi `credibility_evidence` dan `credibility_reason` untuk hostname yang cocok. Kolom ini hanya untuk audit dan tidak menjadi fitur model. Jika menambah bukti manual, gunakan satu baris per hostname, pisahkan beberapa URL dengan titik koma, dan pertahankan alasan serta tanggal pemeriksaan. Penilaian biner tetap ditentukan oleh `configs/domain_authority.json`, bukan angka historis `credibility_level` pada CSV audit.
 
 Setelah mengubah review, bangun ulang:
 

@@ -110,12 +110,12 @@ class GenerationError(RuntimeError):
         super().__init__(f"Pemanggilan Gemini gagal ({self.code}); detail rahasia tidak dicetak.")
 
 
-def generate(model, request, key):
+def generate(model, request, key, timeout=120):
     url = "https://generativelanguage.googleapis.com/v1beta/models/" + quote(model, safe="") + ":generateContent"
     req = Request(url, data=json.dumps(request).encode("utf-8"), method="POST",
                   headers={"Content-Type": "application/json", "x-goog-api-key": key})
     try:
-        with urlopen(req, timeout=55) as response:
+        with urlopen(req, timeout=timeout) as response:
             payload = json.load(response)
     except HTTPError as error:
         # Retain only diagnostic quota fields; never persist request URLs, keys,
@@ -136,8 +136,11 @@ def generate(model, request, key):
         except (ValueError, TypeError, AttributeError, OSError):
             diagnostic = {}
         raise GenerationError(error.code, diagnostic) from None
-    except (URLError, TimeoutError, OSError):
-        raise GenerationError("network_or_timeout") from None
+    except (URLError, TimeoutError, OSError) as error:
+        reason = error.reason if isinstance(error, URLError) else error
+        code = 'timeout' if isinstance(reason, TimeoutError) else 'network_error'
+        raise GenerationError(code, {'exception_type': type(reason).__name__,
+                                     'timeout_seconds': timeout}) from None
     except (ValueError, UnicodeError):
         raise GenerationError("invalid_json") from None
     if not isinstance(payload, dict) or payload.get("error"):

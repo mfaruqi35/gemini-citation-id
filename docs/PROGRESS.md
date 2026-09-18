@@ -1,6 +1,32 @@
 # Progres penelitian
 
-Terakhir diperbarui: **10 September 2026**.
+Terakhir diperbarui: **18 September 2026**.
+
+## 18 September 2026: bukti kredibilitas dipertahankan sebagai metadata audit
+
+Atas keputusan peneliti, fitur model tetap biner melalui `domain_authority_level`, sedangkan `credibility_evidence` dan `credibility_reason` ditambahkan kembali ke ekspor lengkap. Builder membaca `data/manual/source_credibility.csv`: `evidence_urls` dan `reason` lama disalin sebagai catatan mentah apabila hostname cocok. Untuk Level 2 tanpa audit lama, URL final yang diamati menjadi bukti awal dan alasan mengikuti basis aturan biner. Level 1 yang belum pernah diperiksa menyimpan bukti kosong dan alasan default.
+
+Kolom tersebut tersedia pada `articles.csv`, `dataset.csv`, `dataset_gemini_only.csv`, dan `dataset_union.csv`. Keduanya dikeluarkan secara eksplisit dari daftar prediktor dan tidak tersedia di `model_ready.csv`; label, kelayakan artikel, serta level biner tidak berubah karena isi metadata audit. `domain_authority_basis` tetap menjadi alasan aturan aktif. Alasan dari CSV lama adalah bukti historis rubrik 1–5 dan dapat berbeda dari keputusan biner aktif. Konfigurasi fitur mencatat lokasi sumber audit melalui `credibility_audit_csv`. Sebelas tes builder lulus sebelum pembangunan ulang dataset lokal.
+
+## 17 September 2026: recovery Gemini untuk kegagalan transport
+
+Pengumpulan `main_02` sempat berhenti pada query kedua, "Bagaimana cara cek pajak NPWP?": satu respons berhasil dan dua slot berstatus `network_or_timeout`. Kuota terakhir tersimpan 150 SerpApi, token respons tersimpan 14.420. Status query `completed` berarti tiga slot sudah memiliki hasil/error, bukan otomatis memenuhi minimal dua valid.
+
+Ditambahkan `src/recover_main_gemini.py` dan flag `--recover-gemini --max-recovery-calls` pada runner. Recovery eksplisit, maksimal satu retry per slot sepanjang checkpoint, tanpa mengulang Google atau respons berhasil. Kegagalan lama diarsipkan di `recovery_history`; jadwal tetap tiga slot dan denominator proporsi sitasi adalah jumlah slot valid, bukan jumlah request HTTP. Slot retry memakai waktu baru; recovery melewati slot yang akan melanggar jendela 6 jam. Error billing/429, respons invalid yang sudah selesai, dan status `started` tidak diulang otomatis.
+
+Timeout Gemini dinaikkan dari 55 menjadi 120 detik dan error transport dipisahkan menjadi `timeout`/`network_error` tanpa mencetak detail rahasia. Rekap penggunaan menambahkan jumlah kegagalan yang diarsipkan. Timeout yang tidak mengembalikan respons mungkin sudah ditagihkan; token lokal bukan total billing. Perubahan ini hanya mengubah transport/recovery, tidak mengubah model/prompt/manifest batch. Implementasi dan preview diuji lokal; **30 tes terkait lulus, belum ada retry API berbayar yang dijalankan pada tahap perbaikan ini**. Preview menemukan slot 2 dan 3 query kedua masih siap dipulihkan saat diperiksa.
+
+## 17 September 2026: pengumpulan query tersisa dan pemantauan penggunaan
+
+Atas instruksi peneliti, pengumpulan URL batch `main_02` dimulai dari snapshot **265 query accepted baru**: 115 kesehatan, 92 keuangan, 58 teknologi. Daftar menggabungkan 4 query awal yang belum dikumpulkan dan 261 query ekspansi; ID dan teks dibandingkan dengan manifest batch sebelumnya agar 41 query lama tidak diulang. Total accepted saat persiapan adalah 306. Snapshot ada di `data/manual/main_02_queries.csv`, config di `configs/main_dataset_02.json`.
+
+`src/continue_main_dataset.py` menyiapkan snapshot dan melanjutkan kolektor yang sudah ada. Model/prompt/parameter pencarian tetap mengikuti batch awal; tiga percobaan, minimal dua valid, ambang sitasi >=0,5. Urutan bergantian antar domain. Kuota SerpApi awal **152 dari 250 tersisa** (98 terpakai), diperiksa melalui Account API. Eksekusi dimulai dengan batas **142 query**, pemeriksaan tiap **5 query**, cadangan **10 kredit**. Ini adalah batas eksekusi, bukan klaim bahwa 142 query telah selesai.
+
+Token Gemini direkap dari respons tersimpan, termasuk respons yang belum selesai resolusi URL. Laporan `data/raw/main/main_02/usage_latest.json` serta `usage_history/` menyimpan kuota dan penggunaan batch. Laporan ini tidak mengetahui saldo rupiah Gemini maupun penggunaan di luar batch; billing perlu dilihat di AI Studio. API error menghentikan proses dan mempertahankan checkpoint, tanpa retry panggilan berbayar otomatis. Respons yang berakhir karena batas token tetap disimpan untuk audit.
+
+Saat catatan ini dibuat, **query pertama selesai dengan tiga percobaan valid**, 7 pasangan Google dan 23 pasangan gabungan; penggunaan yang dilaporkan 10.469 token total. Query kedua sedang diproses. Angka live tersedia dalam `data/interim/main/main_02/queries.csv`, `trials.csv`, dan checkpoint mentah. Pengumpulan ini belum melakukan scraping artikel baru. Manifest/dataset scraping lama tetap terpisah. **13 tes kolektor dan 2 tes pemantauan lulus**, seluruhnya menggunakan simulasi tanpa API.
+
+Build artikel terakhir sebelum ekspansi (19.18 WIB) mencakup 870 URL dicoba, 330 artikel eligible, 72 pasangan utama siap-model dari 68 URL unik, serta 194 pasangan tambahan siap analisis. Status baru pengumpulan URL tidak otomatis menambah baris model-ready sebelum scraping dan build berikutnya.
 
 ## Pembaruan terbaru: jalur query asli tanpa sintesis
 
@@ -361,3 +387,15 @@ Peneliti meminta agar hasil scraping berikutnya juga masuk ke dataset yang benar
 Notebook 06 disesuaikan agar satu variabel FEATURE_CONFIG mengendalikan config scraping, folder hasil, sumber review kredibilitas, dan argumen kedua perintah. Mengganti batch tidak lagi memerlukan penggantian path OUTPUT dan perintah secara terpisah. RUN_SCRAPING=True menjalankan scraping lalu pembangunan ulang otomatis; kedua tabel kelompok dimuat ulang dan jumlah/folder hasil ditampilkan setelah selesai. Pilihan artikel contoh juga menyesuaikan jika Alodokter tidak ada dalam batch baru. Panduan penambahan dan MAIN_DATASET.md menegaskan bahwa pada terminal, builder dijalankan setelah scraper untuk memperbarui dataset final.
 
 Ditambahkan satu tes integrasi dengan HTTP/embedding simulasi: mengambil satu URL, membangun dataset, melanjutkan dua URL berikutnya, lalu membangun ulang. Tes membuktikan checkpoint awal tidak berubah, URL bersama diunduh sekali, pasangan baru masuk ke kelompok yang tepat, URL gagal tetap berada di dataset tambahannya, dan model hanya memuat pasangan utama. **Sembilan tes pada test_build_article_dataset.py lulus**, termasuk tes integrasi baru. Sel notebook juga diperiksa dalam mode baca dan cabang scraping/build dengan subprocess yang disimulasikan. Tidak ada pengambilan website, panggilan SerpApi/Gemini, atau perubahan jumlah dataset riil; tetap 20 URL, 13 pasangan utama dan 11 tambahan.
+
+## 17 September 2026 - otoritas domain disederhanakan menjadi dua level
+
+Atas keputusan peneliti, rubrik kredibilitas 1–5 diganti oleh fitur **`domain_authority_level` biner**. Level 2 berarti otoritas tinggi: domain kesehatan yang jelas terafiliasi rumah sakit/klinik, domain keuangan yang terafiliasi lembaga berizin OJK, domain teknologi yang terafiliasi perusahaan/platform terdaftar PSE, suffix `.ac.id`/`.go.id`, atau media besar yang jelas kredibel. Level 1 menjadi default/rendah bagi semua lainnya, termasuk status tidak jelas atau ambigu. Tidak ada lagi level kosong, provisional, pemeriksaan KARS rinci, atau kebutuhan menyelesaikan edge case sebelum dataset dapat digunakan.
+
+Aturan dibekukan dalam `configs/domain_authority.json` dengan versi `domain_authority_binary_v1`. Suffix pemerintah dan akademik diterapkan otomatis; rumah sakit/klinik, afiliasi OJK, perusahaan/platform PSE, dan media besar menggunakan daftar hostname eksplisit beserta basis kategori. Host baru yang tidak ditemukan otomatis Level 1. `domain_authority_basis` dan versi aturan disimpan sebagai kolom audit, tetapi hanya `domain_authority_level` menjadi fitur model. Level tidak menyatakan kebenaran isi artikel atau aturan internal Gemini.
+
+`src/build_article_dataset.py` dan `configs/article_features.json` diperbarui. Fitur `credibility_level` diganti oleh `domain_authority_level`; jumlah prediktor tetap 37. Status `credibility_needs_verification` dihapus dari syarat kesiapan. `data/manual/source_credibility.csv`, respons PSE mentah, dan dokumentasi rubrik 1–5 dipertahankan sebagai arsip historis tetapi tidak lagi dibaca builder. Versi fitur menjadi `article_features_v3_binary_domain_authority`. Notebook 06 menampilkan level, basis, dan versi aturan baru; output lama notebook dibersihkan agar tidak menampilkan status kredibilitas yang sudah kedaluwarsa.
+
+Dataset dibangun ulang secara lokal tanpa scraping, SerpApi, atau Gemini. Snapshot aktual berisi **90 URL dicoba, 112 pasangan gabungan, 68 pasangan utama, dan 44 pasangan tambahan**. Dari 90 domain artikel, **48 mendapat Level 2 dan 42 Level 1**. `model_ready.csv` sekarang berisi **23 pasangan utama: 7 positif dan 16 negatif**, naik dari 3 karena ketidakpastian rubrik lama tidak lagi memblokir baris. Perubahan ini tidak mengubah label, status crawling, keputusan artikel, BM25, atau embedding. Artikel gagal, halaman tidak eligible, label tidak pasti, dan alias yang perlu diperiksa tetap tidak masuk model-ready. Status `eligible_auto` masih mengikuti aturan kelayakan ekstraktor dan tetap dapat diverifikasi manusia melalui `article_review.csv` sebelum dataset final dibekukan.
+
+Ekspor sebelum perubahan disalin ke `outputs/review_backups/domain_authority_binary_20260917`. Audit memastikan seluruh artikel memiliki tepat Level 1 atau 2, basis tidak kosong, kolom lama tidak menjadi fitur, tidak ada alasan kesiapan kredibilitas lama, dan seluruh 23 pasangan model-ready berasal dari dataset utama dengan label pasti. **72 unit test lulus**, termasuk pengujian suffix, daftar hostname, default Level 1, dan pipeline lanjutan. Notebook 06 tervalidasi dan seluruh sel default berjalan tanpa proses pengumpulan.

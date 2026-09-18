@@ -286,7 +286,7 @@ def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher
             for repetition in range(1, config['repetitions'] + 1):
                 trial = next((t for t in record['trials'] if t['repetition'] == repetition), None)
                 if trial is None:
-                    trial = {'trial_id': 'main_trial_' + digest(config['dataset_id'] + qid + str(repetition)), 'repetition': repetition, 'status': 'started', 'started_at': now()}
+                    trial = {'trial_id': 'main_trial_' + digest(config['dataset_id'] + qid + str(repetition)), 'repetition': repetition, 'status': 'started', 'started_at': now(), 'transport_timeout_seconds': 120}
                     record['trials'].append(trial)
                     write_json(path, record)
                     request = {'contents': [{'role': 'user', 'parts': [{'text': query['query_text']}]}],

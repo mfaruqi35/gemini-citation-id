@@ -7,7 +7,7 @@ Penelitian menggunakan query asli Google Trends dan People Also Ask pada domain 
 - [Panduan dataset utama](docs/MAIN_DATASET.md): pengumpulan, seleksi query, penambahan query, penggabungan kandidat, dan penggabungan CSV Trends.
 - [Notebook 04](notebooks/04_inspect_main_dataset.ipynb): memeriksa hasil pengumpulan utama.
 - [Notebook 05](notebooks/05_review_query_expansion.ipynb): meninjau kandidat query tambahan.
-- [Notebook 06](notebooks/06_inspect_article_dataset.ipynb): memeriksa hasil scraping, fitur, label, dan kredibilitas; melanjutkan URL berikutnya.
+- [Notebook 06](notebooks/06_inspect_article_dataset.ipynb): memeriksa hasil scraping, fitur, label, dan otoritas domain biner; melanjutkan URL berikutnya.
 - [Catatan progres](docs/PROGRESS.md): riwayat keputusan dan hasil penelitian.
 - [Pengumpulan PAA](docs/PAA_COLLECTION.md) dan [pilot grounding](docs/GEMINI_GROUNDING_PILOT.md): dokumentasi tahap sebelumnya.
 

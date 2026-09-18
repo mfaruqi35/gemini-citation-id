@@ -1,0 +1,53 @@
+{
+  "version": "domain_authority_binary_v1",
+  "level_meaning": {
+    "1": "default_or_low",
+    "2": "high"
+  },
+  "automatic_level_2_suffixes": [
+    ".go.id",
+    ".ac.id"
+  ],
+  "level_2_hosts": {
+    "bumame.com": "health_institution",
+    "klinikdiabetesnusantara.com": "health_institution",
+    "medistra.com": "health_institution",
+    "www.ekahospital.com": "health_institution",
+    "www.kliniksehatq.com": "health_institution",
+    "www.siloamhospitals.com": "health_institution",
+    "ajaib.co.id": "ojk_affiliated_financial_institution",
+    "galeri24.co.id": "ojk_affiliated_financial_institution",
+    "pegadaian.co.id": "ojk_affiliated_financial_institution",
+    "www.banksinarmas.com": "ojk_affiliated_financial_institution",
+    "www.cimbniaga.co.id": "ojk_affiliated_financial_institution",
+    "www.smbci.com": "ojk_affiliated_financial_institution",
+    "dqlab.id": "pse_registered_technology_company_or_platform",
+    "id.store.asus.com": "pse_registered_technology_company_or_platform",
+    "play.google.com": "pse_registered_technology_company_or_platform",
+    "shopee.co.id": "pse_registered_technology_company_or_platform",
+    "support.google.com": "pse_registered_technology_company_or_platform",
+    "support.microsoft.com": "pse_registered_technology_company_or_platform",
+    "translate.google.com": "pse_registered_technology_company_or_platform",
+    "www.asus.com": "pse_registered_technology_company_or_platform",
+    "www.blibli.com": "pse_registered_technology_company_or_platform",
+    "www.facebook.com": "pse_registered_technology_company_or_platform",
+    "www.instagram.com": "pse_registered_technology_company_or_platform",
+    "www.microsoft.com": "pse_registered_technology_company_or_platform",
+    "www.tokopedia.com": "pse_registered_technology_company_or_platform",
+    "www.youtube.com": "pse_registered_technology_company_or_platform",
+    "bangka.tribunnews.com": "established_press_media",
+    "finance.detik.com": "established_press_media",
+    "inet.detik.com": "established_press_media",
+    "kumparan.com": "established_press_media",
+    "momsmoney.kontan.co.id": "established_press_media",
+    "narasi.tv": "established_press_media",
+    "tekno.kompas.com": "established_press_media",
+    "www.cnbcindonesia.com": "established_press_media",
+    "www.hukumonline.com": "established_press_media"
+  },
+  "default": {
+    "level": 1,
+    "basis": "default_other_or_ambiguous"
+  },
+  "note": "Aturan operasional peneliti 17 September 2026. Level 2 tinggi; Level 1 default/rendah. Tidak ada status provisional dan tidak ada skala 1-5."
+}

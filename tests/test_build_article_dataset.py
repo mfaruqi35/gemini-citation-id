@@ -4,7 +4,8 @@ import tempfile
 from unittest.mock import patch
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from build_article_dataset import label_for, publication_age, dataset_group, export_datasets, build
+from build_article_dataset import (label_for, publication_age, dataset_group, export_datasets,
+                                   build, domain_authority, credibility_audit)
 from collect_paa import write_json, write_csv, read_json
 from collect_main_dataset import read_rows
 from article_features import extract_features, bm25_scores
@@ -24,6 +25,27 @@ class DatasetTests(unittest.TestCase):
         self.assertIsNone(label_for(self.pair(n_valid='1'), .5)[0])
         self.assertIsNone(label_for(self.pair(n_unknown_matches='1', citation_proportion=''), .5)[0])
         self.assertIsNone(label_for(self.pair(), None)[0])
+
+    def test_binary_domain_authority_uses_suffix_list_and_low_default(self):
+        rules = {'automatic_level_2_suffixes': ['.go.id', '.ac.id'],
+                 'level_2_hosts': {'hospital.example': 'health_institution'},
+                 'default': {'level': 1, 'basis': 'default_other_or_ambiguous'}}
+        self.assertEqual(domain_authority('sub.kemkes.go.id', rules), (2, 'government_domain_suffix'))
+        self.assertEqual(domain_authority('kampus.ac.id', rules), (2, 'academic_domain_suffix'))
+        self.assertEqual(domain_authority('HOSPITAL.EXAMPLE', rules), (2, 'health_institution'))
+        self.assertEqual(domain_authority('unknown.example', rules), (1, 'default_other_or_ambiguous'))
+        self.assertEqual(domain_authority('', rules), (1, 'default_other_or_ambiguous'))
+
+    def test_credibility_audit_is_separate_from_binary_feature(self):
+        audit = {'evidence_urls': 'https://registry.example/evidence',
+                 'reason': 'Catatan pemeriksaan mentah.'}
+        self.assertEqual(credibility_audit('unknown.example', 'https://unknown.example/a', 1,
+                                           'default_other_or_ambiguous', audit),
+                         ('https://registry.example/evidence', 'Catatan pemeriksaan mentah.'))
+        evidence, reason = credibility_audit('hospital.example', 'https://hospital.example/a', 2,
+                                              'health_institution', {})
+        self.assertEqual(evidence, 'https://hospital.example/a')
+        self.assertIn('Level 2', reason)
 
     def test_split_is_per_query_and_overlap_stays_in_primary(self):
         shared = {'article_id': 'same_url', 'in_gemini_citations': 'True'}
@@ -77,10 +99,16 @@ class DatasetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             crawl = {'dataset_id': 'articles_future', 'source_batches': ['main_future']}
-            config = {'scrape_config': 'configs/crawl.json', 'credibility_csv': 'data/manual/credibility.csv',
+            config = {'scrape_config': 'configs/crawl.json',
+                      'domain_authority_config': 'configs/authority.json',
                       'article_review_csv': 'data/manual/review.csv', 'citation_threshold': .5,
                       'bm25_k1': 1.5, 'bm25_b': .75, 'feature_version': 'test'}
             write_json(root / config['scrape_config'], crawl)
+            write_json(root / config['domain_authority_config'], {
+                'version': 'test_binary_v1', 'level_meaning': {'1': 'low', '2': 'high'},
+                'automatic_level_2_suffixes': ['.go.id', '.ac.id'],
+                'level_2_hosts': {'article1.example': 'test_high'},
+                'default': {'level': 1, 'basis': 'default_other_or_ambiguous'}})
             source = []
             for pair_id, article_id, origin, proportion in [
                 ('p1', 'article_1', 'google_and_gemini', '0.5'),
@@ -95,9 +123,6 @@ class DatasetTests(unittest.TestCase):
                                'in_gemini_citations': origin != 'google_only',
                                'collection_complete': True, 'citation_proportion': proportion})
             write_csv(root / 'data/interim/main/main_future/query_article_pairs_union.csv', source, list(source[0]))
-            write_csv(root / config['credibility_csv'], [
-                {'hostname': f'article{i}.example', 'credibility_level': '2', 'review_status': 'verified'}
-                for i in range(1, 4)], ['hostname', 'credibility_level', 'review_status'])
             manifest = scrape_articles.make_manifest(crawl, root)
             calls = []
 
@@ -127,11 +152,15 @@ class DatasetTests(unittest.TestCase):
                 for name, content in saved.items():
                     self.assertEqual((checkpoints / name).read_bytes(), content)
                 output = root / 'data/processed/articles_future'
+                article_rows = read_rows(output / 'articles.csv')
+                self.assertIn('credibility_evidence', article_rows[0])
+                self.assertIn('credibility_reason', article_rows[0])
                 self.assertEqual({r['pair_id'] for r in read_rows(output / 'dataset.csv')}, {'p1', 'p3'})
                 supplement = read_rows(output / 'dataset_gemini_only.csv')
                 self.assertEqual({r['pair_id'] for r in supplement}, {'p2', 'p4'})
                 self.assertEqual(next(r for r in supplement if r['pair_id'] == 'p4')['crawl_status'], 'robots_unavailable')
                 self.assertEqual({r['pair_id'] for r in read_rows(output / 'model_ready.csv')}, {'p1', 'p3'})
+                self.assertNotIn('credibility_evidence', read_rows(output / 'model_ready.csv')[0])
                 self.assertEqual(read_json(output / 'summary.json')['attempted_urls'], 3)
                 # Rebuilding locally cannot add pairs or require another fetch.
                 again = build(config, root, with_embeddings=True, reextract=False)

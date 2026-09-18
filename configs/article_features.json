@@ -1,9 +1,10 @@
 {
   "scrape_config": "configs/article_dataset.json",
-  "feature_version": "article_features_v2_google_top10",
+  "feature_version": "article_features_v3_binary_domain_authority",
   "citation_threshold": 0.5,
   "threshold_operator": ">=",
-  "credibility_csv": "data/manual/source_credibility.csv",
+  "domain_authority_config": "configs/domain_authority.json",
+  "credibility_audit_csv": "data/manual/source_credibility.csv",
   "article_review_csv": "data/manual/article_review.csv",
   "bm25_k1": 1.5,
   "bm25_b": 0.75,

@@ -13,12 +13,49 @@ from article_features import extract_features, bm25_scores, MODEL_FEATURE_FIELDS
 from article_embeddings import LocalEmbeddings
 
 ROOT = Path(__file__).resolve().parents[1]
-EXTRA_FEATURES = ['publication_age_days', 'credibility_level', 'bm25', 'semantic_cosine']
+EXTRA_FEATURES = ['publication_age_days', 'domain_authority_level', 'bm25', 'semantic_cosine']
 DATASET_PROTOCOL = 'google_top10_primary_gemini_only_supplement_v1'
 
 
 def optional_rows(path):
     return read_rows(path) if path.exists() else []
+
+
+def domain_authority(hostname, rules):
+    """Apply the researcher's binary rule; unknown/ambiguous hosts default to level 1."""
+    host = (hostname or '').casefold().strip().rstrip('.')
+    if not host:
+        return 1, 'default_other_or_ambiguous'
+    for suffix in rules['automatic_level_2_suffixes']:
+        suffix = suffix.casefold()
+        if host.endswith(suffix):
+            return 2, 'academic_domain_suffix' if suffix == '.ac.id' else 'government_domain_suffix'
+    basis = {key.casefold(): value for key, value in rules['level_2_hosts'].items()}.get(host)
+    if basis:
+        return 2, basis
+    return int(rules['default']['level']), rules['default']['basis']
+
+
+def credibility_audit(hostname, final_url, authority_level, authority_basis, audit):
+    """Keep supporting material for audit; it never changes the binary feature."""
+    evidence = (audit.get('evidence_urls') or '').strip()
+    reason = (audit.get('reason') or '').strip()
+    if not evidence and authority_level == 2:
+        # Under the simplified rubric, the observed institutional/domain page is
+        # sufficient raw evidence; detailed registry evidence can be added later.
+        evidence = final_url
+    if not reason:
+        descriptions = {
+            'government_domain_suffix': 'Level 2 karena hostname memakai suffix pemerintah .go.id.',
+            'academic_domain_suffix': 'Level 2 karena hostname memakai suffix institusi akademik .ac.id.',
+            'health_institution': 'Level 2 karena hostname tercatat sebagai rumah sakit/klinik yang jelas.',
+            'ojk_affiliated_financial_institution': 'Level 2 karena hostname tercatat sebagai afiliasi lembaga keuangan berizin OJK.',
+            'pse_registered_technology_company_or_platform': 'Level 2 karena hostname tercatat sebagai perusahaan/platform teknologi PSE.',
+            'established_press_media': 'Level 2 karena hostname tercatat sebagai media besar yang jelas kredibel.',
+            'default_other_or_ambiguous': 'Level 1 sebagai default karena hostname belum memenuhi aturan Level 2.',
+        }
+        reason = descriptions.get(authority_basis, authority_basis)
+    return evidence, reason
 
 
 def dataset_group(pair):
@@ -84,16 +121,31 @@ def safe_path(root, name):
 
 
 def build(config, root=ROOT, with_embeddings=False, reextract=True):
+    print('Memulai build dari hasil scraping tersimpan...', flush=True)
     crawl_config = read_json(safe_path(root, config['scrape_config']))
     dataset_id = crawl_config['dataset_id']
     raw = safe_path(root, crawl_config.get('raw_dir', f'data/raw/articles/{dataset_id}'))
     manifest = read_json(raw / 'manifest.json')
     output = root / 'data/processed' / dataset_id
-    credibility = {r['hostname'].casefold(): r for r in optional_rows(root / config['credibility_csv'])}
+    authority_rules = read_json(safe_path(root, config['domain_authority_config']))
+    if (set(authority_rules.get('level_meaning', {})) != {'1', '2'}
+            or authority_rules.get('default', {}).get('level') != 1):
+        raise ValueError('Konfigurasi otoritas domain harus biner dengan default Level 1.')
     reviews = {r['article_id']: r for r in optional_rows(root / config['article_review_csv'])}
+    audit_path = root / config.get('credibility_audit_csv', '')
+    credibility_rows = optional_rows(audit_path) if config.get('credibility_audit_csv') else []
+    credibility_by_host = {}
+    for audit_row in credibility_rows:
+        audit_host = (audit_row.get('hostname') or '').casefold().strip().rstrip('.')
+        if not audit_host or audit_host in credibility_by_host:
+            if audit_host in credibility_by_host:
+                raise ValueError(f'Hostname audit kredibilitas duplikat: {audit_host}')
+            continue
+        credibility_by_host[audit_host] = audit_row
     records, articles = {}, []
+    print(f"Memeriksa {len(manifest['articles'])} URL pada manifest; ekstraksi ulang HTML lokal: {reextract}.", flush=True)
     # Source provenance is preserved; only attempted articles enter this dataset snapshot.
-    for item in manifest['articles']:
+    for position, item in enumerate(manifest['articles'], 1):
         article_id = item['article_id']
         path = raw / 'records' / (article_id + '.json')
         if not path.exists():
@@ -101,6 +153,7 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
         record = read_json(path)
         if not record.get('attempts'):
             continue
+        print(f"[Ekstraksi {position}/{len(manifest['articles'])}] {article_id} | {record['status']}", flush=True)
         attempt = record['attempts'][-1]
         extraction = record.get('extraction') or {}
         derived_status = record['status']
@@ -114,10 +167,10 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
         write_json(output / 'extractions' / (article_id + '.json'), extraction)
         final_url = attempt.get('final_url') or item['article_url']
         host = (urlsplit(final_url).hostname or '').casefold()
-        credibility_row = credibility.get(host, {})
-        level = credibility_row.get('credibility_level', '')
-        if level and level not in {'1', '2', '3', '4', '5'}:
-            raise ValueError('Tingkat kredibilitas harus 1-5 atau kosong: ' + host)
+        authority_level, authority_basis = domain_authority(host, authority_rules)
+        credibility_evidence, credibility_reason = credibility_audit(
+            host, final_url, authority_level, authority_basis,
+            credibility_by_host.get(host, {}))
         review = reviews.get(article_id, {})
         review_status = review.get('status') or extraction.get('article_review_status', 'not_extracted')
         lang = review.get('language') or extraction.get('language', '')
@@ -141,10 +194,11 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             **{key: extraction.get(key) for key in MODEL_FEATURE_FIELDS},
             'publication_age_days': publication_age(extraction.get('published_at'),
                                                     attempt.get('finished_at') or attempt['started_at']),
-            'credibility_level': int(level) if level else None,
-            'credibility_status': credibility_row.get('review_status', 'not_reviewed'),
-            'credibility_evidence': credibility_row.get('evidence_urls', ''),
-            'credibility_reason': credibility_row.get('reason', ''),
+            'domain_authority_level': authority_level,
+            'domain_authority_basis': authority_basis,
+            'domain_authority_rule_version': authority_rules['version'],
+            'credibility_evidence': credibility_evidence,
+            'credibility_reason': credibility_reason,
         }
         records[article_id] = record
         articles.append(row)
@@ -159,6 +213,7 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
     reference = [(a['article_id'], documents[i]) for i, a in enumerate(corpus) if a['article_id'] in google_ids]
     reference_documents = [text for _, text in reference]
     corpus_hash = hashlib.sha256(json.dumps(reference, ensure_ascii=False).encode('utf-8')).hexdigest()
+    print(f'Ekstraksi selesai: {len(articles)} URL; {len(corpus)} artikel eligible. Menghitung BM25...', flush=True)
     bm25 = {q: (bm25_scores(q, documents, config['bm25_k1'], config['bm25_b'],
                            reference_documents=reference_documents) if reference else [None] * len(documents))
             for q in {p['query_text'] for p in pairs}}
@@ -170,6 +225,7 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             print('Embedding artikel:', article['article_id'], flush=True)
             vectors[article['article_id']], semantic_metadata[article['article_id']] = engine.vector(text, 'article')
         for q in sorted({p['query_text'] for p in pairs if p['article_id'] in vectors}):
+            print('Embedding query:', q, flush=True)
             query_vectors[q], _ = engine.vector(q, 'query')
         semantic_status = 'computed_local'
         write_json(output / 'embedding_model_manifest.json', engine.fingerprint())
@@ -196,8 +252,6 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             reasons.append('article_not_eligible')
         if label is None:
             reasons.append(label_status)
-        if a['credibility_level'] is None or a['credibility_status'] != 'verified':
-            reasons.append('credibility_needs_verification')
         if similarity is None:
             reasons.append('semantic_not_computed')
         if index is not None and not reference:
@@ -220,6 +274,7 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             'not_ready_reason': '|'.join(reasons + (['supplement_not_primary'] if group == 'gemini_only' else [])),
             'feature_version': config['feature_version'],
         })
+    print(f'Menyimpan dataset ke {output}...', flush=True)
     write_csv(output / 'articles.csv', articles, list(articles[0]))
     fields = list(dict.fromkeys(key for row in dataset for key in row))
     model_fields = ['source_batch', 'pair_id', 'query_id', 'article_id', 'domain', 'citation_label'] + MODEL_FEATURE_FIELDS + EXTRA_FEATURES
@@ -231,7 +286,9 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
         'target': 'citation_label', 'identifiers_not_features': model_fields[:5],
         'excluded_from_features': ['candidate_origin', 'in_google_top10', 'in_gemini_citations',
                                    'n_cited', 'n_valid', 'citation_proportion', 'google_positions',
-                                   'crawl_status', 'extraction_method', 'credibility_status',
+                                   'crawl_status', 'extraction_method', 'domain_authority_basis',
+                                   'domain_authority_rule_version',
+                                   'credibility_evidence', 'credibility_reason',
                                    'dataset_group', 'dataset_protocol', 'ready_for_analysis'],
     })
     summary = {
@@ -250,6 +307,8 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
         'labels': dict(Counter(str(p['citation_label']) for p in dataset)),
         'bm25_corpus_sha256': corpus_hash, 'bm25_corpus_articles': len(reference),
         'bm25_corpus_scope': 'eligible_google_top10_articles',
+        'domain_authority_rule_version': authority_rules['version'],
+        'domain_authority_levels': dict(Counter(str(a['domain_authority_level']) for a in articles)),
         'note': 'dataset.csv/model_ready.csv hanya Google Top-10; dataset_gemini_only.csv tambahan; dataset_union.csv arsip audit. BM25 memakai korpus artikel eligible Google Top-10. Contoh teknis, belum sampel representatif.',
     }
     write_json(output / 'summary.json', summary)
