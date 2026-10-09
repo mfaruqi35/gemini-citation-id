@@ -2,6 +2,7 @@
 /venv/
 /.venv/
 /env/
+/proposal
 
 # Data penelitian dan hasil eksekusi lokal
 /data/

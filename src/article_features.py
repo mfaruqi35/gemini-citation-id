@@ -25,9 +25,10 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
+from article_dates import parse_publication_date
 
 
-FEATURE_VERSION = 1
+FEATURE_VERSION = 3
 MODEL_FEATURE_FIELDS = [
     'word_count', 'sentence_count', 'char_count', 'paragraph_count',
     'heading_count', 'section_heading_count',
@@ -56,8 +57,20 @@ SITE_BODY_SELECTORS = {
     'ekahospital.com': '.grow .content',
     'pajak.go.id': 'article',
     'ayosehat.kemkes.go.id': '#isi-lengkap',
+    # Verified against saved article HTML during technical recovery, 2026-09-21.
+    'prudential.co.id': '.column-container .cmp-text',
+    'prudentialsyariah.co.id': '.column-container .cmp-text',
+    'aia-financial.co.id': '.cmp-section--contentdetail .cmp-text',
+    'nestlehealthscience.co.id': '.nhs-freestyle-content',
+    # Saved Hello Sehat pages have the article body here; generic extraction
+    # sometimes selects the English bibliography instead of Indonesian prose.
+    'hellosehat.com': '.unique-content-wrapper',
+    # Inspected local HTML, 2026-10-06: omit keyword lists and related cards.
+    'rumahginjal.id': '.g-font-size-16.g-line-height-1_8.g-mb-30',
+    'axa-mandiri.co.id': '.box-full-content.font-opensans',
 }
 BODY_SELECTORS = (
+    '.elementor-widget-theme-post-content',
     '[itemprop="articleBody"]', '.detail__body-text', '.read__content',
     '.article__body', '.article-body', '.article__content', '.article-content',
     '#article-content', '.entry-content', '.post-content', '.td-post-content',
@@ -169,10 +182,36 @@ def _metadata(soup: BeautifulSoup, url: str) -> dict:
     declared = (html_tag.get('lang', '') if html_tag else '') or meta('og:locale', 'language') or article.get('inLanguage', '')
     declared = str(declared).replace('_', '-').lower().split('-')[0]
     byline = soup.select_one('[rel="author"], [itemprop="author"]')
+    # Publication evidence only: never substitute dateModified, copyright, HTTP
+    # Last-Modified or a date inferred from the URL for the publication date.
+    date_candidates = [
+        (_normal(article.get('datePublished')), 'jsonld:article.datePublished'),
+        (meta('article:published_time', 'datePublished', 'pubdate', 'publishdate',
+              'parsely-pub-date', 'sailthru.date', 'date_published'), 'meta:publication'),
+        (time_value('datePublished'), 'itemprop:datePublished'),
+    ]
+    for selector in ('time.published', '.entry-date:not(.updated)', '.published-date', '.date_created'):
+        candidates = []
+        for tag in soup.select(selector):
+            if tag.find_parent(['aside', 'nav', 'footer']):
+                continue
+            if any(re.search(r'related|recommend|comment', ' '.join(parent.get('class', [])), re.I)
+                   for parent in [tag, *tag.parents] if isinstance(parent, Tag)):
+                continue
+            value = _normal(tag.get('datetime') or tag.get('content') or tag.get_text(' ', strip=True))
+            if parse_publication_date(value) is not None:
+                candidates.append(value)
+        # Multiple publication timestamps on a listing are not evidence for its
+        # primary article. Do not arbitrarily take the first related item.
+        if len(set(candidates)) == 1:
+            date_candidates.append((candidates[0], 'dom:' + selector))
+    published, date_source = next(((v, s) for v, s in date_candidates if parse_publication_date(v) is not None),
+                                  next(((v, s) for v, s in date_candidates if v), ('', 'not_found')))
     return {
         'title': _normal(article.get('headline')) or (title_tag.get_text(' ', strip=True) if soup.find('h1') else '') or meta('og:title', 'twitter:title') or (title_tag.get_text(' ', strip=True) if title_tag else ''),
         'author': _author(article.get('author')) or meta('author', 'article:author') or (byline.get_text(' ', strip=True) if byline else ''),
-        'published_at': _normal(article.get('datePublished')) or meta('article:published_time', 'datePublished', 'pubdate', 'publishdate') or time_value('datePublished'),
+        'published_at': published,
+        'published_at_source': date_source,
         'modified_at': _normal(article.get('dateModified')) or meta('article:modified_time', 'dateModified', 'lastmod') or time_value('dateModified'),
         'canonical_url': canonical_url,
         'language_declared': {'in': 'id'}.get(declared, declared),

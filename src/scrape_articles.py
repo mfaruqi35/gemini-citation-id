@@ -163,6 +163,52 @@ def paths(manifest, root=ROOT):
             safe_path(root, manifest['config']['interim_dir']))
 
 
+def validate_manifest_update(previous, current, extend_manifest=False):
+    """Allow an explicit, additive update only; existing pair values stay frozen."""
+    if previous == current:
+        return None
+    if not extend_manifest:
+        raise ValueError(
+            'Manifest berubah/berbeda dari sumber saat ini. Jika hanya ada tambahan data, '
+            'preview dengan --extend-manifest, lalu tambahkan --run untuk menyimpannya. '
+            'Perubahan data lama atau konfigurasi memerlukan dataset_id baru.')
+    if previous['config'] != current['config'] or previous['pipeline_version'] != current['pipeline_version']:
+        raise ValueError('Perluasan ditolak: konfigurasi/versi berubah. Gunakan dataset_id baru.')
+
+    def index(rows, key):
+        result = {}
+        for row in rows:
+            identity = key(row)
+            if identity in result:
+                raise ValueError(f'Perluasan ditolak: identitas duplikat {identity}.')
+            result[identity] = row
+        return result
+
+    old_pairs = index(previous['pairs'], lambda row: (row['source_batch'], row['pair_id']))
+    new_pairs = index(current['pairs'], lambda row: (row['source_batch'], row['pair_id']))
+    for identity, row in old_pairs.items():
+        if identity not in new_pairs:
+            raise ValueError(f'Perluasan ditolak: pasangan lama hilang/tidak eligible: {identity}.')
+        if row != new_pairs[identity]:
+            raise ValueError(f'Perluasan ditolak: nilai pasangan lama berubah: {identity}. '
+                             'Tinjau perubahan atau gunakan dataset_id baru.')
+
+    old_articles = index(previous['articles'], lambda row: row['article_id'])
+    new_articles = index(current['articles'], lambda row: row['article_id'])
+    provenance = {'research_domains', 'candidate_origins', 'query_ids', 'pair_ids', 'source_batches'}
+    for identity, row in old_articles.items():
+        replacement = new_articles.get(identity)
+        if replacement is None or row.keys() != replacement.keys():
+            raise ValueError(f'Perluasan ditolak: identitas artikel lama berubah/hilang: {identity}.')
+        for key, value in row.items():
+            retained = (set(value) <= set(replacement[key]) if key in provenance
+                        else value == replacement[key])
+            if not retained:
+                raise ValueError(f'Perluasan ditolak: URL/provenance artikel lama berubah: {identity}.')
+    return {'added_urls': len(new_articles) - len(old_articles),
+            'added_pairs': len(new_pairs) - len(old_pairs)}
+
+
 def load_record(raw, article):
     path = raw / 'records' / (article['article_id'] + '.json')
     return read_json(path) if path.exists() else {
@@ -170,11 +216,22 @@ def load_record(raw, article):
         'status': 'not_requested', 'attempts': [], 'extraction': {}}
 
 
-def pending_articles(manifest, root=ROOT, retry_failed=False):
+def pending_articles(manifest, root=ROOT, retry_failed=False, retry_transient_only=False,
+                     primary_only=False):
     raw, _ = paths(manifest, root)
     rows = []
     for article in manifest['articles']:
+        if primary_only and not set(article['candidate_origins']) & {'google_only', 'google_and_gemini', 'both'}:
+            continue
         record = load_record(raw, article)
+        if retry_transient_only:
+            latest = record['attempts'][-1] if record['attempts'] else {}
+            code = latest.get('http_status') or 0
+            transient = record['status'] in {'network_error', 'robots_unavailable', 'interrupted', 'extraction_error'}
+            transient |= record['status'] == 'http_error' and (code in {408, 429} or 500 <= int(code) <= 599)
+            if transient:
+                rows.append(article)
+            continue
         if ((not retry_failed and record['status'] == 'not_requested')
                 or (retry_failed and record['status'] in RETRYABLE)):
             rows.append(article)
@@ -387,7 +444,8 @@ def export_articles(manifest, root=ROOT):
     return rows
 
 
-def collect(manifest, root=ROOT, max_new_urls=20, retry_failed=False, fetcher=None, extractor=None):
+def collect(manifest, root=ROOT, max_new_urls=20, retry_failed=False, fetcher=None, extractor=None,
+            extend_manifest=False, retry_transient_only=False, primary_only=False):
     if type(max_new_urls) is not int or max_new_urls < 1:
         raise ValueError('max_new_urls harus bilangan bulat positif.')
     if extractor is None:
@@ -396,8 +454,6 @@ def collect(manifest, root=ROOT, max_new_urls=20, retry_failed=False, fetcher=No
     raw, _ = paths(manifest, root)
     raw.mkdir(parents=True, exist_ok=True)
     frozen_path, lock_path = raw / 'manifest.json', raw / 'running.lock'
-    if frozen_path.exists() and read_json(frozen_path) != manifest:
-        raise ValueError('Manifest berubah. Gunakan dataset_id baru untuk sumber/konfigurasi berbeda.')
     try:
         lock = lock_path.open('x', encoding='utf-8')
     except FileExistsError:
@@ -407,10 +463,26 @@ def collect(manifest, root=ROOT, max_new_urls=20, retry_failed=False, fetcher=No
         lock.write(now())
         lock.flush()
         try:
-            if not frozen_path.exists():
+            # Re-read and validate under the same lock used by scraping, even after preview.
+            previous = read_json(frozen_path) if frozen_path.exists() else None
+            delta = validate_manifest_update(previous, manifest, extend_manifest) if previous else None
+            if delta is not None:
+                fingerprint = hashlib.sha256(json.dumps(previous, sort_keys=True).encode()).hexdigest()
+                backup = raw / 'manifest_history' / f'manifest_{fingerprint}.json'
+                if backup.exists():
+                    if read_json(backup) != previous:
+                        raise ValueError('Arsip manifest tidak sesuai; manifest aktif tidak diubah.')
+                else:
+                    write_json(backup, previous)
                 write_json(frozen_path, manifest)
-            selected = pending_articles(manifest, root, retry_failed)[:max_new_urls]
-            if fetcher is None:
+                print(f"Manifest diperluas: +{delta['added_urls']} URL, +{delta['added_pairs']} pasangan. "
+                      f"Arsip: {backup.relative_to(Path(root).resolve())}", flush=True)
+            elif previous is None:
+                write_json(frozen_path, manifest)
+            export_articles(manifest, root)
+            selected = pending_articles(manifest, root, retry_failed, retry_transient_only,
+                                        primary_only)[:max_new_urls]
+            if selected and fetcher is None:
                 client = DirectFetcher(manifest['config'])
                 fetcher = client.fetch
             for index, article in enumerate(selected, 1):
@@ -472,14 +544,26 @@ def main():
     parser.add_argument('--run', action='store_true', help='Aktifkan permintaan langsung ke website.')
     parser.add_argument('--max-new-urls', type=int, default=20)
     parser.add_argument('--retry-failed', action='store_true', help='Izinkan percobaan baru untuk status gagal; riwayat dipertahankan.')
+    parser.add_argument('--extend-manifest', action='store_true',
+                        help='Izinkan tambahan pasangan/URL tanpa mengubah data lama; '
+                             'preview tetap baca saja, penyimpanan memerlukan --run.')
+    parser.add_argument('--retry-transient-only', action='store_true',
+                        help='Retry hanya jaringan/robots unavailable/interupsi/ekstraksi/HTTP 408,429,5xx.')
+    parser.add_argument('--primary-only', action='store_true', help='Pilih hanya URL yang menjadi kandidat Google Top-10.')
     args = parser.parse_args()
     if args.max_new_urls < 1:
         parser.error('--max-new-urls minimal 1.')
-    manifest = make_manifest(read_json(safe_path(ROOT, args.config)))
-    raw, _ = paths(manifest)
-    if (raw / 'manifest.json').exists() and read_json(raw / 'manifest.json') != manifest:
-        raise ValueError('Manifest berbeda. Pertahankan konfigurasi atau buat dataset_id baru.')
-    pending = pending_articles(manifest, retry_failed=args.retry_failed)
+    if args.retry_failed and args.retry_transient_only:
+        parser.error('Pilih --retry-failed atau --retry-transient-only, bukan keduanya.')
+    manifest = make_manifest(read_json(safe_path(ROOT, args.config)), ROOT)
+    raw, _ = paths(manifest, ROOT)
+    if (raw / 'manifest.json').exists():
+        delta = validate_manifest_update(read_json(raw / 'manifest.json'), manifest, args.extend_manifest)
+        if delta is not None:
+            print(f"Rencana perluasan: +{delta['added_urls']} URL, +{delta['added_pairs']} pasangan. "
+                  'Checkpoint lama dipertahankan.')
+    pending = pending_articles(manifest, ROOT, retry_failed=args.retry_failed,
+                               retry_transient_only=args.retry_transient_only, primary_only=args.primary_only)
     print(f"URL unik: {len(manifest['articles'])} | pasangan eligible: {len(manifest['pairs'])}")
     print(f"Belum diambil/diizinkan ulang: {len(pending)} | batas kali ini: {args.max_new_urls}")
     for article in pending[:args.max_new_urls]:
@@ -487,7 +571,9 @@ def main():
     if not args.run:
         print('Preview saja: tidak ada permintaan jaringan atau perubahan data. Tambahkan --run untuk mengambil halaman.')
         return
-    rows = collect(manifest, max_new_urls=args.max_new_urls, retry_failed=args.retry_failed)
+    rows = collect(manifest, ROOT, max_new_urls=args.max_new_urls, retry_failed=args.retry_failed,
+                   extend_manifest=args.extend_manifest, retry_transient_only=args.retry_transient_only,
+                   primary_only=args.primary_only)
     print('Status:', dict(Counter(row['scrape_status'] for row in rows)))
 
 

@@ -1,5 +1,5 @@
 {
-  "scrape_config": "configs/article_dataset.json",
+  "scrape_config": "configs/article_dataset_03.json",
   "feature_version": "article_features_v5_source_matching",
   "recover_source_matching": true,
   "preserve_pending_manual_reviews": true,

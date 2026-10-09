@@ -1,10 +1,14 @@
 """Scraping contract tests: fake HTTP only, no publisher/API calls."""
 
 import json
+import copy
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from contextlib import redirect_stdout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import scrape_articles as scraper
@@ -177,6 +181,159 @@ class ManifestAndResumeTests(unittest.TestCase):
         record = scraper.load_record(raw, manifest['articles'][0])
         self.assertEqual(record['status'], 'extraction_error')
         self.assertTrue((self.root / record['attempts'][0]['raw_html_path']).exists())
+
+    def test_extension_reuses_downloads_and_adds_shared_url_pairs(self):
+        previous = self.manifest()
+        calls = []
+
+        def fetch(url):
+            calls.append(url)
+            return {'status': 'success', 'final_url': url, 'content_type': 'text/html',
+                    'body': b'<html>Article</html>'}
+
+        scraper.collect(previous, self.root, 10, fetcher=fetch, extractor=fake_extract)
+        raw, interim = scraper.paths(previous, self.root)
+        snapshots = {p: p.read_bytes() for folder in ('records', 'html', 'extractions')
+                     for p in (raw / folder).glob('*')}
+        self.rows += [source_pair(4), source_pair(5, 'teknologi', 'gemini_only',
+                      url=self.rows[0]['article_url'], article_id='article_1')]
+        self.save_source()
+        current = self.manifest()
+        with self.assertRaisesRegex(ValueError, '--extend-manifest'):
+            scraper.collect(current, self.root, 10, fetcher=fetch, extractor=fake_extract)
+        self.assertEqual(read_json(raw / 'manifest.json'), previous)
+        scraper.collect(current, self.root, 10, fetcher=fetch, extractor=fake_extract,
+                        extend_manifest=True)
+        self.assertEqual(len(calls), 4)
+        for path, content in snapshots.items():
+            self.assertEqual(path.read_bytes(), content)
+        archives = list((raw / 'manifest_history').glob('*.json'))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(read_json(archives[0]), previous)
+        self.assertEqual(read_json(raw / 'manifest.json'), current)
+        self.assertEqual(len(scraper.pending_articles(current, self.root)), 0)
+        import csv
+        with (interim / 'source_pairs.csv').open(encoding='utf-8-sig') as handle:
+            pairs = list(csv.DictReader(handle))
+        self.assertEqual(len(pairs), 5)
+        self.assertEqual(pairs[-1]['article_id'], 'article_1')
+        # Ordinary resume and repeated extension are both idempotent.
+        scraper.collect(current, self.root, 10, fetcher=fetch, extractor=fake_extract)
+        scraper.collect(current, self.root, 10, fetcher=fetch, extractor=fake_extract,
+                        extend_manifest=True)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(list((raw / 'manifest_history').glob('*.json'))), 1)
+
+    def test_extension_retry_only_retries_failed_and_keeps_new_urls_pending(self):
+        previous = self.manifest()
+
+        def fetch(url):
+            return {'status': 'network_error', 'final_url': url, 'body': b''}
+
+        scraper.collect(previous, self.root, 1, fetcher=fetch, extractor=fake_extract)
+        failed = previous['articles'][0]
+        self.rows += [source_pair(4)]
+        self.save_source()
+        current = self.manifest()
+        calls = []
+
+        def success(url):
+            calls.append(url)
+            return {'status': 'success', 'final_url': url, 'body': b'<html>Article</html>'}
+
+        scraper.collect(current, self.root, 10, retry_failed=True, fetcher=success,
+                        extractor=fake_extract, extend_manifest=True)
+        self.assertEqual(calls, [failed['article_url']])
+        raw, _ = scraper.paths(current, self.root)
+        record = scraper.load_record(raw, failed)
+        self.assertEqual([a['status'] for a in record['attempts']], ['network_error', 'success'])
+        self.assertEqual(len(scraper.pending_articles(current, self.root)), 3)
+
+    def test_extension_rejects_changes_deletions_and_duplicate_identities(self):
+        previous = self.manifest()
+        raw, _ = scraper.paths(previous, self.root)
+        write_json(raw / 'manifest.json', previous)
+        before = (raw / 'manifest.json').read_bytes()
+        changed = []
+        for key, value in [('query_text', 'Changed question'), ('candidate_origin', 'gemini_only'),
+                           ('citation_label', '1'), ('article_url', 'https://changed.example/a')]:
+            candidate = copy.deepcopy(previous)
+            candidate['pairs'][0][key] = value
+            changed.append(candidate)
+        candidate = copy.deepcopy(previous)
+        candidate['pairs'].pop()
+        changed.append(candidate)
+        candidate = copy.deepcopy(previous)
+        candidate['config']['min_words'] += 1
+        changed.append(candidate)
+        candidate = copy.deepcopy(previous)
+        candidate['articles'][0]['article_url'] = 'https://changed.example/a'
+        changed.append(candidate)
+        candidate = copy.deepcopy(previous)
+        candidate['pairs'].append(candidate['pairs'][0])
+        changed.append(candidate)
+        for candidate in changed:
+            with self.subTest(candidate=candidate), self.assertRaises(ValueError):
+                scraper.collect(candidate, self.root, 1, fetcher=lambda url: self.fail('Unexpected fetch'),
+                                extractor=fake_extract, extend_manifest=True)
+            self.assertEqual((raw / 'manifest.json').read_bytes(), before)
+            self.assertFalse((raw / 'manifest_history').exists())
+            self.assertFalse((raw / 'running.lock').exists())
+
+    def test_extension_archive_failure_does_not_replace_active_manifest(self):
+        previous = self.manifest()
+        raw, _ = scraper.paths(previous, self.root)
+        write_json(raw / 'manifest.json', previous)
+        self.rows += [source_pair(4)]
+        self.save_source()
+        with patch.object(scraper, 'write_json', side_effect=PermissionError('locked archive')):
+            with self.assertRaises(PermissionError):
+                scraper.collect(self.manifest(), self.root, 1, fetcher=lambda url: self.fail('Unexpected fetch'),
+                                extractor=fake_extract, extend_manifest=True)
+        self.assertEqual(read_json(raw / 'manifest.json'), previous)
+        self.assertFalse((raw / 'running.lock').exists())
+
+    def test_extension_preview_has_no_writes_or_network(self):
+        previous = self.manifest()
+        raw, _ = scraper.paths(previous, self.root)
+        write_json(raw / 'manifest.json', previous)
+        config_path = self.root / 'config.json'
+        write_json(config_path, self.config)
+        self.rows += [source_pair(4)]
+        self.save_source()
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        output = io.StringIO()
+        with patch.object(scraper, 'ROOT', self.root), patch.object(sys, 'argv', [
+                'scrape_articles.py', '--config', str(config_path), '--extend-manifest']), \
+                patch.object(scraper, 'collect', side_effect=AssertionError('Unexpected collection')), \
+                redirect_stdout(output):
+            scraper.main()
+        self.assertIn('+1 URL, +1 pasangan', output.getvalue())
+        self.assertIn('Preview saja', output.getvalue())
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+
+    def test_fingerprint_only_update_requires_opt_in_but_is_allowed(self):
+        previous = self.manifest()
+        self.rows += [source_pair(4, grounding_eligible=False)]
+        self.save_source()
+        current = self.manifest()
+        self.assertNotEqual(previous['source_fingerprints'], current['source_fingerprints'])
+        self.assertEqual(scraper.validate_manifest_update(previous, current, True),
+                         {'added_urls': 0, 'added_pairs': 0})
+
+    def test_transient_retry_filters_permanent_errors_and_supplement(self):
+        self.rows = [source_pair(i) for i in range(1, 6)] + [source_pair(6, origin='gemini_only')]
+        self.save_source()
+        manifest = self.manifest()
+        raw, _ = scraper.paths(manifest, self.root)
+        statuses = [('network_error', 0), ('http_error', 503), ('http_error', 404),
+                    ('robots_disallowed', 403), ('success', 200), ('network_error', 0)]
+        for row in manifest['articles']:
+            status, code = statuses[int(row['article_id'].split('_')[1])-1]
+            write_json(raw/'records'/(row['article_id']+'.json'), {
+                'status': status, 'attempts': [{'http_status': code}]})
+        selected = scraper.pending_articles(manifest, self.root, retry_transient_only=True, primary_only=True)
+        self.assertEqual({a['article_id'] for a in selected}, {'article_1','article_2'})
 
 
 class FakeResponse:

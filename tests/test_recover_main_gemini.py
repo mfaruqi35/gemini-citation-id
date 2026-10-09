@@ -60,6 +60,84 @@ class RecoveryTests(unittest.TestCase):
         saved = recovery.read_json(self.path)
         self.assertEqual(saved['trials'][2], self.record['trials'][2])
 
+    def test_503_retry_and_missing_slot_resume_without_google_or_new_query(self):
+        self.record['status'] = 'started'
+        self.record['trials'] = self.record['trials'][:2]
+        self.record['trials'][1]['error'] = '503'
+        recovery.write_json(self.path, self.record)
+        self.manifest['queries'].append({'query_id': 'new', 'query_text': 'Baru?', 'domain': 'teknologi'})
+        recovery.write_json(self.raw / 'manifest.json', self.manifest)
+        calls = []
+        def generate(*args):
+            calls.append(args)
+            return response()
+        recovery.recover(self.manifest, self.data, 'fake', 2, generator=generate,
+                         resolver=resolve, finish_incomplete=True)
+        saved = recovery.read_json(self.path)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(saved['status'], 'completed')
+        self.assertEqual(saved['google'], self.record['google'])
+        self.assertEqual(saved['trials'][0], self.record['trials'][0])
+        self.assertEqual(saved['trials'][1]['recovery_history'][0]['trial'], self.record['trials'][1])
+        self.assertEqual([t['repetition'] for t in saved['trials']], [1, 2, 3])
+        self.assertFalse((self.raw / 'queries/new.json').exists())
+        self.assertEqual(recovery.recover(self.manifest, self.data, 'fake', 2, generator=generate,
+                                         resolver=resolve, finish_incomplete=True), 0)
+
+    def test_missing_slots_respect_budget_and_expired_or_failed_google(self):
+        self.record['status'] = 'started'
+        self.record['trials'] = self.record['trials'][:1]
+        recovery.write_json(self.path, self.record)
+        calls = recovery.recover(self.manifest, self.data, 'fake', 1,
+                                 generator=lambda *a: response(), resolver=resolve, finish_incomplete=True)
+        self.assertEqual(calls, 1)
+        saved = recovery.read_json(self.path)
+        self.assertEqual(len(saved['trials']), 2)
+        self.assertEqual(saved['status'], 'started')
+        for field, value in [('started_at', '2000-01-01T00:00:00+00:00'), ('status', 'error')]:
+            saved['google'][field] = value
+            recovery.write_json(self.path, saved)
+            self.assertEqual(recovery.recover(self.manifest, self.data, 'fake', 1,
+                             generator=lambda *a: self.fail('No API'), finish_incomplete=True), 0)
+            self.assertEqual(recovery.read_json(self.path), saved)
+
+    def test_503_repeat_stops_and_does_not_retry_again(self):
+        self.record['trials'] = self.record['trials'][:2]
+        self.record['trials'][1]['error'] = '503'
+        recovery.write_json(self.path, self.record)
+        def fail(*a):
+            raise pilot.GenerationError('503')
+        with self.assertRaises(pilot.GenerationError):
+            recovery.recover(self.manifest, self.data, 'fake', 3, generator=fail, finish_incomplete=True)
+        saved = recovery.read_json(self.path)
+        self.assertEqual(len(saved['trials']), 2)
+        self.assertEqual(recovery.recovery_reason(saved, saved['trials'][1], self.manifest['config']),
+                         'retry_limit_reached')
+
+    def test_uncertain_trial_blocks_missing_slots(self):
+        self.record['trials'] = [{'trial_id': 't1', 'repetition': 1, 'status': 'started', 'started_at': recovery.now()}]
+        recovery.write_json(self.path, self.record)
+        self.assertEqual(recovery.recover(self.manifest, self.data, 'fake', 3,
+                         generator=lambda *a: self.fail('No API'), finish_incomplete=True), 0)
+        self.assertEqual(recovery.read_json(self.path), self.record)
+
+    def test_saved_new_slot_resumes_resolution_without_another_generation(self):
+        self.record['trials'] = self.record['trials'][:1]
+        recovery.write_json(self.path, self.record)
+        def interrupted(url):
+            raise RuntimeError('resolver interrupted')
+        with self.assertRaises(RuntimeError):
+            recovery.recover(self.manifest, self.data, 'fake', 1, generator=lambda *a: response(),
+                             resolver=interrupted, finish_incomplete=True)
+        saved = recovery.read_json(self.path)
+        self.assertEqual(saved['trials'][1]['status'], 'response_saved')
+        saved['google']['started_at'] = '2000-01-01T00:00:00+00:00'
+        recovery.write_json(self.path, saved)
+        self.assertEqual(recovery.recover(self.manifest, self.data, 'fake', 1,
+                         generator=lambda *a: self.fail('No regeneration'), resolver=resolve,
+                         finish_incomplete=True), 0)
+        self.assertEqual(recovery.read_json(self.path)['trials'][1]['status'], 'completed')
+
     def test_failed_retry_cannot_repeat_across_runs(self):
         def fail(*a):
             raise pilot.GenerationError('timeout')

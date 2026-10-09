@@ -59,6 +59,14 @@ class ExpansionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             expansion.prepare(self.config, {qid: {**change, 'language': 'unknown'}}, self.root)
 
+    def test_blank_paa_depth_from_old_query_defaults_to_first_paa_level(self):
+        saved = expansion.read_json(self.main_path)
+        saved['query']['paa_depth'] = ''
+        write_json(self.main_path, saved)
+        rows = expansion.build_pool(self.config, root=self.root)
+        child = next(r for r in rows if r['parent_query_id'] == 'parent')
+        self.assertEqual(child['paa_depth'], 2)
+
     def test_unknown_review_id_rejected(self):
         with self.assertRaises(ValueError):
             expansion.prepare(self.config, {'missing': {'language': 'id', 'status': 'accepted',

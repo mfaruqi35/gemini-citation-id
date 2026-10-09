@@ -1,7 +1,8 @@
 {
   "expansion_id": "query_expansion_01",
   "main_batches": [
-    "main_01"
+    "main_01",
+    "main_02"
   ],
   "paa_batches": [
     "paa_expansion_01",

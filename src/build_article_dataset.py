@@ -3,7 +3,6 @@ import argparse
 import hashlib
 import json
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -11,6 +10,7 @@ from collect_paa import read_json, write_json, write_csv, now
 from collect_main_dataset import read_rows, normalize_url
 from article_features import extract_features, bm25_scores, MODEL_FEATURE_FIELDS
 from article_embeddings import LocalEmbeddings
+from article_dates import publication_details
 
 ROOT = Path(__file__).resolve().parents[1]
 EXTRA_FEATURES = ['publication_age_days', 'domain_authority_level', 'bm25', 'semantic_cosine']
@@ -100,18 +100,13 @@ def label_for(pair, threshold):
 
 
 def publication_age(value, retrieved_at):
-    if not value:
-        return None
-    try:
-        from dateutil.parser import isoparse
-        published = isoparse(value)
-        retrieved = isoparse(retrieved_at)
-        published = published.replace(tzinfo=published.tzinfo or timezone.utc)
-        retrieved = retrieved.replace(tzinfo=retrieved.tzinfo or timezone.utc)
-        age = (retrieved - published).total_seconds() / 86400
-        return round(age, 3) if age >= 0 else None
-    except (ValueError, TypeError):
-        return None
+    return publication_details(value, retrieved_at)['publication_age_days']
+
+
+def feature_completeness(rows, features):
+    """Audit missing values without imputing from the whole dataset (leakage)."""
+    return {field: {'missing': sum(row.get(field) in (None, '') for row in rows),
+                    'total': len(rows)} for field in features}
 
 
 def safe_path(root, name):
@@ -132,6 +127,12 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             or authority_rules.get('default', {}).get('level') != 1):
         raise ValueError('Konfigurasi otoritas domain harus biner dengan default Level 1.')
     reviews = {r['article_id']: r for r in optional_rows(root / config['article_review_csv'])}
+    # Technical recovery must not silently approve pending human decisions.
+    pending_reviews = {}
+    if config.get('preserve_pending_manual_reviews'):
+        pending_reviews = {r['article_id']: r['article_review_status']
+                           for r in optional_rows(output / 'articles.csv')
+                           if r['article_review_status'] in {'needs_language_review', 'needs_page_type_review'}}
     audit_path = root / config.get('credibility_audit_csv', '')
     credibility_rows = optional_rows(audit_path) if config.get('credibility_audit_csv') else []
     credibility_by_host = {}
@@ -173,6 +174,8 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             credibility_by_host.get(host, {}))
         review = reviews.get(article_id, {})
         review_status = review.get('status') or extraction.get('article_review_status', 'not_extracted')
+        if not review.get('status') and article_id in pending_reviews:
+            review_status = pending_reviews[article_id]
         lang = review.get('language') or extraction.get('language', '')
         eligible = (derived_status == 'success' and bool(extraction.get('text'))
                     and lang == 'id' and review_status in {'accepted', 'eligible_auto'})
@@ -190,10 +193,11 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             'extraction_method': extraction.get('extraction_method', ''),
             'canonical_url': extraction.get('canonical_url', ''),
             'author': extraction.get('author', ''), 'published_at': extraction.get('published_at', ''),
+            'published_at_source': extraction.get('published_at_source', 'not_extracted'),
             'modified_at': extraction.get('modified_at', ''),
             **{key: extraction.get(key) for key in MODEL_FEATURE_FIELDS},
-            'publication_age_days': publication_age(extraction.get('published_at'),
-                                                    attempt.get('finished_at') or attempt['started_at']),
+            **publication_details(extraction.get('published_at'),
+                                  attempt.get('finished_at') or attempt['started_at']),
             'domain_authority_level': authority_level,
             'domain_authority_basis': authority_basis,
             'domain_authority_rule_version': authority_rules['version'],
@@ -209,8 +213,23 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
     corpus_index = {a['article_id']: i for i, a in enumerate(corpus)}
     documents = [(a['title'] + '\n' + a['text']).strip() for a in corpus]
     pairs = [p for p in manifest['pairs'] if p['article_id'] in by_id]
+    matching_audit = None
+    if config.get('recover_source_matching'):
+        from article_source_matching import reconcile_pairs
+        pairs, matching_audit = reconcile_pairs(pairs, articles, root, safe_path(
+            root, config.get('url_recovery_cache', 'data/interim/article_repair/url_resolutions.json')))
+        write_json(output / 'source_matching_audit.json', matching_audit)
     google_ids = {p['article_id'] for p in pairs if dataset_group(p) == 'google_top10'}
     reference = [(a['article_id'], documents[i]) for i, a in enumerate(corpus) if a['article_id'] in google_ids]
+    if matching_audit is not None:
+        identity_by_id = {p['article_id']: p['article_identity_url'] for p in pairs}
+        seen, unique_reference = set(), []
+        for aid, text in reference:
+            identity = identity_by_id[aid]
+            if identity not in seen:
+                seen.add(identity)
+                unique_reference.append((aid, text))
+        reference = unique_reference
     reference_documents = [text for _, text in reference]
     corpus_hash = hashlib.sha256(json.dumps(reference, ensure_ascii=False).encode('utf-8')).hexdigest()
     print(f'Ekstraksi selesai: {len(articles)} URL; {len(corpus)} artikel eligible. Menghitung BM25...', flush=True)
@@ -256,9 +275,12 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             reasons.append('semantic_not_computed')
         if index is not None and not reference:
             reasons.append('bm25_reference_empty')
-        alias_review = a['article_id'] in ambiguous_aliases
+        alias_review = (pair['url_alias_needs_review'] if matching_audit is not None
+                        else a['article_id'] in ambiguous_aliases)
         if alias_review:
             reasons.append('url_alias_needs_review')
+        if pair.get('duplicate_pair_of'):
+            reasons.append('duplicate_query_article')
         dataset.append({
             **pair, **{k: v for k, v in a.items() if k != 'text'},
             'dataset_group': group, 'dataset_protocol': DATASET_PROTOCOL,
@@ -274,22 +296,41 @@ def build(config, root=ROOT, with_embeddings=False, reextract=True):
             'not_ready_reason': '|'.join(reasons + (['supplement_not_primary'] if group == 'gemini_only' else [])),
             'feature_version': config['feature_version'],
         })
+        missing = [f for f in MODEL_FEATURE_FIELDS + EXTRA_FEATURES if dataset[-1].get(f) in (None, '')]
+        dataset[-1]['missing_model_features'] = '|'.join(missing)
+        dataset[-1]['model_features_complete'] = not missing
     print(f'Menyimpan dataset ke {output}...', flush=True)
     write_csv(output / 'articles.csv', articles, list(articles[0]))
     fields = list(dict.fromkeys(key for row in dataset for key in row))
     model_fields = ['source_batch', 'pair_id', 'query_id', 'article_id', 'domain', 'citation_label'] + MODEL_FEATURE_FIELDS + EXTRA_FEATURES
+    if matching_audit is not None:
+        model_fields.insert(4, 'article_identity_url')
     primary, supplement, ready = export_datasets(output, dataset, fields, model_fields)
+    write_json(output / 'missing_features_report.json', {
+        'created_at': now(), 'primary': feature_completeness(primary, MODEL_FEATURE_FIELDS + EXTRA_FEATURES),
+        'model_ready': feature_completeness(ready, MODEL_FEATURE_FIELDS + EXTRA_FEATURES),
+        'publication_age_status_primary': dict(Counter(p['publication_age_status'] for p in primary)),
+        'policy': 'Missing features remain empty/NaN. Fit any imputer on training folds only; never impute labels. model_ready is eligibility, not guaranteed complete features.',
+    })
     write_json(output / 'feature_columns.json', {
         'model_features': MODEL_FEATURE_FIELDS + EXTRA_FEATURES,
         'dataset_protocol': DATASET_PROTOCOL, 'training_scope': 'google_top10',
         'primary_dataset': 'dataset.csv', 'supplementary_dataset': 'dataset_gemini_only.csv',
-        'target': 'citation_label', 'identifiers_not_features': model_fields[:5],
+        'target': 'citation_label', 'identifiers_not_features': model_fields[:model_fields.index('citation_label')],
+        'missing_value_policy': 'Keep NaN for models supporting missing values, or fit an imputer on training folds only and reuse for prediction. Do not fill publication age with zero.',
         'excluded_from_features': ['candidate_origin', 'in_google_top10', 'in_gemini_citations',
                                    'n_cited', 'n_valid', 'citation_proportion', 'google_positions',
                                    'crawl_status', 'extraction_method', 'domain_authority_basis',
                                    'domain_authority_rule_version',
                                    'credibility_evidence', 'credibility_reason',
-                                   'dataset_group', 'dataset_protocol', 'ready_for_analysis'],
+                                   'published_at_source', 'published_at_normalized', 'publication_age_status',
+                                   'publication_timezone_assumed', 'missing_model_features', 'model_features_complete',
+                                   'dataset_group', 'dataset_protocol', 'ready_for_analysis',
+                                   'article_identity_url', 'matching_version', 'matching_applied', 'duplicate_pair_of',
+                                   'original_n_cited', 'original_n_unknown_matches', 'original_citation_proportion',
+                                   'original_citation_lower', 'original_citation_upper', 'original_citation_label',
+                                   'original_label_status', 'original_candidate_origin', 'original_in_gemini_citations'],
+        'source_matching_version': matching_audit['version'] if matching_audit else 'manifest_original',
     })
     summary = {
         'created_at': now(), 'config': config, 'attempted_urls': len(articles),

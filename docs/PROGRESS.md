@@ -1,12 +1,256 @@
 # Progres penelitian
 
-Terakhir diperbarui: **18 September 2026**.
+Terakhir diperbarui: **9 Oktober 2026**.
+
+## 9 Oktober 2026: review seluruh sisa kandidat query PAA
+
+Seluruh **850 kandidat pending** pada pool ekspansi dinilai menggunakan rubrik query yang sama: bahasa Indonesia, relevansi domain, intent yang berdiri sendiri, kebutuhan informasi yang dapat dibahas artikel, dan duplikasi kebutuhan informasi. Penilaian dilakukan oleh asisten Codex sebagai **LLM-as-a-judge untuk seleksi query**, dengan reviewer `asisten_rubrik_v1_20261009`. Teks PAA tidak ditulis ulang dan keberhasilan sitasi Gemini tidak digunakan sebagai kriteria.
+
+| Domain | Accepted baru | Excluded baru |
+| --- | ---: | ---: |
+| Kesehatan | 272 | 103 |
+| Keuangan | 198 | 99 |
+| Teknologi | 112 | 66 |
+| **Total** | **582** | **268** |
+
+Penolakan terdiri dari 198 duplikasi kebutuhan informasi, 43 pertanyaan ambigu/tidak lengkap, dan 27 di luar domain atau cakupan artikel. Seluruh 582 query diterima belum masuk manifest `main_01`–`main_03`. Keputusan lama sebanyak 403 ID dipertahankan identik; file keputusan aktif sekarang berisi 1.253 ID. Ekspor pool menjadi **918 accepted dan 335 excluded**, tanpa pending/needs_review. Angka 918 mencakup 336 query ekspansi yang sudah dipakai; snapshot khusus kandidat belum terjadwal berisi 582 baris. Bersama 381 query yang sudah terjadwal pada batch 1–3, terdapat 963 query terjadwal atau tersedia, bukan 963 query selesai maupun artikel model-ready.
+
+Teks, status, alasan per baris, reviewer, provenance, serta `duplicate_of` dan teks wakil duplikat tersimpan pada [review lengkap](../data/manual/query_expansion_20261009_review.csv). Kandidat siap dipilih untuk batch selanjutnya terdapat pada [accepted_unused_20261009.csv](../data/interim/query_expansion/query_expansion_01/accepted_unused_20261009.csv). Rincian rubrik, contoh, batas pelaporan, serta penggunaan berkas dicatat pada [laporan review query](REVIEW_QUERY_20261009.md). Keputusan pipeline sudah diterapkan ke `data/manual/query_expansion_01_decisions.csv`; belum dibuat snapshot pengumpulan `main_04`.
+
+Validasi lokal memastikan cakupan seluruh kandidat, alasan terisi, rujukan duplikat valid, keputusan lama dan teks PAA tetap identik, serta integritas ketiga manifest pengumpulan. Tidak ada penggunaan kuota SerpApi/Gemini atau perubahan dataset artikel. Review hanya memakai sumber ekspansi yang sudah aktif, termasuk PAA tersimpan dari `main_01` dan `main_02`; PAA tambahan dari `main_03` berada di luar cakupan snapshot ini. Hasil merupakan penilaian asisten yang dapat dikoreksi manusia, bukan validasi independen antarpenilai. Backup, anotasi, skrip penerapan, dan hitungan terdapat pada `outputs/query_review_20261009`.
+
+## 8 Oktober 2026: verifikasi artikel batch 3
+
+Sebanyak 222 dari 1.217 URL pada manifest batch `articles_main_03` sudah memiliki checkpoint scraping; audit ini hanya mencakup 222 URL tersebut. Menurut [rubrik kelayakan artikel](RUBRIK_SELEKSI_ARTIKEL.md), 114 halaman berhasil diekstraksi dengan minimal 100 kata; 12 sudah memiliki keputusan manual dari batch lama, sedangkan 102 baru dinilai berdasarkan judul dan bagian awal/tengah/akhir teks, dengan pemeriksaan teks/HTML lebih panjang untuk kasus meragukan. Hasil baru: **87 accepted, 8 excluded, 7 needs_extraction_review**. Sebanyak 108 URL lain tertahan oleh kegagalan crawl atau teks di bawah ambang; tidak dinilai sebagai artikel tanpa bukti isi. Keputusan lama 893 ID tetap identik, dan file review aktif kini memuat 995 ID unik.
+
+Builder batch 3 dijalankan ulang dari HTML dan cache embedding lokal. Pasangan utama tetap 222 dan tambahan Gemini-only tetap 1; jumlah label dasar tidak berubah. Artikel eligible naik dari 78 menjadi 99, dan **model_ready naik dari 75 menjadi 96 pasangan**, dengan 30 kesehatan, 32 keuangan, 34 teknologi, serta 62 label 0 dan 34 label 1. Sebanyak 20 baris model-ready belum memiliki usia publikasi; nilai itu dipertahankan kosong untuk penanganan saat pelatihan. Tiga artikel yang diterima masih tertahan akibat `url_matching_uncertain`; satu artikel berstatus accepted sebelumnya gagal diunduh pada batch ini. Tidak ada penggunaan kuota SerpApi atau Gemini. Keputusan, alasan, bukti teks, hambatan teknis, serta ringkasan validasi tercatat pada [audit batch 3](../outputs/article_verification_20261008_main03/REVIEW.md).
+
+## 8 Oktober 2026: pemulihan Gemini 503 tanpa pencarian Google baru
+
+Checkpoint `main_03` diperiksa setelah tiga penghentian akibat Gemini `503 / UNAVAILABLE`. Terdapat 13 query yang sudah dimulai: 9 selesai, 3 memiliki hasil Google selesai tetapi Gemini terputus, dan 1 gagal pada Google. Sebanyak 62 query belum dimulai. Tersimpan 32 slot Gemini: 29 respons selesai dan 3 error 503. Saldo SerpApi terakhir dalam log pengguna adalah 119 pencarian; angka ini tidak diperiksa ulang melalui jaringan. Mengecilkan `--max-queries` tidak memperbaiki gangguan layanan, sedangkan `--unstarted-only` terus memakai pencarian Google untuk query berikutnya.
+
+`src/recover_main_gemini.py` kini menerima HTTP 503 sebagai kegagalan yang boleh dipulihkan satu kali per slot, selain timeout/jaringan. Flag `--finish-incomplete` juga mengisi slot yang belum dimulai pada query yang hasil Googlenya sudah selesai. Jumlah panggilan recovery dan slot baru bersama-sama dibatasi `--max-new-calls`. Query baru tidak dimulai dan tidak ada panggilan SerpApi. Respons tersimpan digunakan kembali; kegagalan lama masuk `recovery_history`. Respons selesai yang tidak memenuhi grounding tidak diulang untuk mengejar hasil positif. Model, prompt, tiga slot penelitian, minimal dua valid, dan ambang label tetap sama.
+
+Sebelum setiap panggilan baru, jendela enam jam diperiksa terhadap waktu Google dan slot tersimpan. Query kedaluwarsa, Google belum selesai, atau trial `started` yang hasilnya tidak pasti dilewati. Jika layanan kembali gagal, proses berhenti dan checkpoint tetap tersimpan. Pesan error 503 sekarang mengarahkan pengguna ke recovery, bukan memulai query baru. Preview lokal menemukan tujuh panggilan potensial untuk tiga query Gemini terputus (tiga retry dan empat slot belum dimulai); kelayakan waktu harus dicek lagi saat eksekusi.
+
+Contoh preview dan eksekusi terbatas:
+
+```powershell
+python src/recover_main_gemini.py --config configs/main_dataset_03.json --finish-incomplete
+python src/recover_main_gemini.py --config configs/main_dataset_03.json --finish-incomplete --run --max-new-calls 1
+```
+
+Validasi: **41 tes lulus** pada modul recovery, klien Gemini, pengumpulan utama, dan runner. Pengujian menggunakan respons simulasi, termasuk batas panggilan, arsip error 503, penghentian jika retry gagal, kelanjutan slot tersisa, idempotensi, dan penolakan jendela kedaluwarsa/checkpoint tidak pasti. Tidak ada panggilan Gemini/SerpApi berbayar atau perubahan checkpoint pengumpulan riil pada pengerjaan ini. Perbaikan mengatasi kelanjutan proses; ketersediaan layanan Gemini tetap bergantung pada penyedia.
+
+## 7 Oktober 2026: persiapan batch utama `main_03`
+
+Seluruh 261 respons Google `main_02` yang berstatus selesai diperiksa sebagai sumber PAA lokal tanpa pencarian baru. Ekspansi sekarang membaca `main_01` dan `main_02`; pembacaan `paa_depth` kosong dari empat kueri lama diperbaiki dengan fallback ke kedalaman PAA pertama. Empat tes ekspansi dan enam tes runner lulus. Dari 925 kandidat PAA baru yang sebelumnya pending, LLM memilih **75 kueri** yang jelas maksudnya dan tidak mengulang ID/teks kueri batch 1–2: **25 kesehatan, 25 keuangan, 25 teknologi**. Sisa **850 kandidat** tetap pending untuk seleksi lanjutan, bukan excluded.
+
+Snapshot terkunci di `data/manual/main_03_queries.csv`. Keputusan dan alasan berada di `data/manual/query_expansion_01_decisions.csv`; daftar teks terpilih ada di `configs/main_03_query_selection.json`. Konfigurasi `configs/main_dataset_03.json` mempertahankan model, prompt, tiga percobaan, minimal dua valid, jendela enam jam, dan ambang label 0,5; `max_serp_searches` diset 75 dengan cadangan 10. Konfigurasi scraping dan fitur terpisah tersedia sebagai `configs/article_dataset_03.json` dan `configs/article_features_03.json`.
+
+Runner `continue_main_dataset.py` kini menerima `--config` agar batch baru tidak tanpa sengaja menjalankan `main_02`; tanpa opsi itu perilaku lama tetap berlaku. Preview lokal untuk `main_03` berhasil menunjukkan 75 kueri seimbang. **Belum ada permintaan SerpApi, Gemini, ataupun scraping artikel untuk batch 3.** Maksimum terjadwal adalah 75 pencarian dan 225 percobaan Gemini, yang dapat dikerjakan bertahap. Perintah lengkap tercatat di [MULAI_BATCH_03.md](MULAI_BATCH_03.md). Kegagalan HTTP 503 pada empat checkpoint `main_02` tidak menghalangi snapshot `main_03`, tetapi perlu tetap dilaporkan sebagai sisa batch 2.
+
+## 7 Oktober 2026: empat checkpoint Google `main_02` yang belum selesai
+
+Setelah perintah `continue_main_dataset.py --run --max-queries 8 --check-every 5` dijalankan, **261 dari 265 kueri** berstatus `completed`. Empat kueri lain berstatus `started`: tiga pencarian Google mencatat **HTTP 503** tanpa respons tersimpan (`query_169786ad40e908636b010d5b`, `query_214008bd53b6e4ede63170d9`, `query_6cf188a6d39cc7102864d813`), sedangkan satu checkpoint (`query_6ee1458a9e019f676561dbf6`) masih `google.status=started` tanpa respons. Keempatnya belum memulai percobaan Gemini. Runner menghentikan proses pada checkpoint pertama karena tidak mengulang permintaan Google yang hasilnya gagal atau belum pasti secara otomatis.
+
+Skrip `src/recover_main_google.py` yang sudah ada dicoba dua kali untuk `query_169786ad40e908636b010d5b` (sekali oleh asisten, sekali oleh pengguna) dan sekali untuk kueri berbeda, `query_214008bd53b6e4ede63170d9`. Ketiganya kembali menerima **HTTP 503**. Tidak ada respons Google baru atau panggilan Gemini; kegagalan lama tersimpan dalam `google_recovery_history`, sedangkan checkpoint aktif tetap berstatus error. Pemeriksaan akun setelah percobaan pertama dan sebelum percobaan kueri kedua sama-sama mencatat **131 pencarian tersisa** (119/250 terpakai), sehingga percobaan gagal yang teramati tidak mengurangi kredit. Dua checkpoint lain tidak dicoba ulang pada pemeriksaan ini.
+
+Sesudah layanan pencarian kembali berhasil, jalankan pemulihan eksplisit **per ID** dengan `python src/recover_main_google.py --config configs/main_dataset_02.json --query-id QUERY_ID --run`, lalu lanjutkan `continue_main_dataset.py` tanpa `--unstarted-only`. Bila sumber pasangan bertambah, perluas manifest scraping `articles_main_02` dengan `--extend-manifest`, ambil URL Top 10 baru, lalu build ulang. Kuota dapat berubah setelah snapshot ini.
+
+## 7 Oktober 2026: verifikasi artikel hasil crawling lanjutan
+
+Sebanyak **561 artikel unik** pada cakupan Google Top 10 diperiksa menggunakan rubrik bahasa, jenis halaman, kecukupan isi, serta keutuhan/kebersihan ekstraksi. Kandidat berasal dari artikel baru dan antrean review yang belum diputuskan, termasuk 310 artikel yang sebelumnya lolos otomatis. Judul dan cuplikan awal/tengah/akhir dibaca oleh LLM; kasus meragukan ditelusuri pada teks lebih panjang serta HTML lokal. Label sitasi tidak menjadi dasar keputusan, dan tidak dilakukan pemeriksaan kebenaran setiap klaim atau pengukuran Cohen's kappa.
+
+Hasilnya **419 accepted, 91 excluded, dan 51 needs_extraction_review**. Katalog, alat/kalkulator, forum, agregasi posting, abstrak tanpa badan makalah, dan narasi utama non-Indonesia dikecualikan. Artikel bersambung yang terpotong, isi tercampur berita lain/spam, atau kehilangan bagian utama ditahan. Keputusan lama sebanyak **332 tetap identik**; total aktif menjadi **893 ID unik** pada `data/manual/article_review.csv`.
+
+Kedua batch dibangun ulang dengan HTML dan embedding lokal. Sebelum audit ini, crawling lanjutan telah menambah dataset utama `main_02` menjadi 2.165 pasangan, sehingga baseline berikut berbeda dari laporan audit 6 Oktober sebelumnya.
+
+| Batch | Pasangan utama | Model-ready sebelum | Masuk | Ditarik | Model-ready sesudah |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| main_01 | 325 | 186 | 0 | 0 | 186 |
+| main_02 | 2.165 | 775 | 172 | 62 | 885 |
+| **Total** | **2.490** | **961** | **172** | **62** | **1.071** |
+
+Pertambahan bersih **110 pasangan**. Sebanyak 62 pasangan yang ditarik berasal dari 61 artikel yang sebelumnya lolos otomatis, tetapi hasil review menunjukkan masalah jenis halaman atau ekstraksi. Lima pasangan dari artikel accepted dalam audit ini masih tertahan: empat karena `url_matching_uncertain`, satu karena duplikasi pasangan. Semua penarikan dapat ditelusuri ke keputusan review; label, proporsi, dan hitungan sitasi seluruh pasangan tetap sama.
+
+Model-ready berisi **826 label 0 / 245 label 1**, dengan kesehatan 504, keuangan 396, teknologi 171. Jumlahnya setara 993 ID artikel, 986 URL identitas artikel, dan 260 query; 1.071 pasangan query-identitas artikel berbeda. Hasil tetap tersimpan pada dua berkas `articles_main_01/model_ready.csv` dan `articles_main_02/model_ready.csv`, belum satu berkas training gabungan. Sebanyak 284 baris memiliki fitur kosong (usia publikasi 278, rerata panjang paragraf 11, beririsan lima), sehingga penanganan nilai hilang tetap diperlukan dalam pipeline pemodelan.
+
+Tidak ada lagi antrean `needs_language_review`/`needs_page_type_review` pada dataset utama. **1.419 pasangan belum model-ready**, termasuk 57 pasangan yang memerlukan perbaikan ekstraksi, kegagalan teknis, teks terlalu pendek, halaman di luar cakupan, dan masalah pasangan lainnya. Di luar 561 kandidat, 675 ID baru masih memiliki hambatan teknis dan tidak dinilai isinya tanpa teks yang cukup. Audit tidak menyatakan seluruh korpus lama telah dinilai LLM: 345 baris model-ready masih menggunakan artikel `eligible_auto` di luar cakupan ini.
+
+Rubrik: `docs/RUBRIK_SELEKSI_ARTIKEL.md`. Laporan lengkap: `docs/VERIFIKASI_ARTIKEL_LANJUTAN_20261007.md`. Keputusan per artikel, bukti, snapshot sebelum perubahan, log build, dan hasil dua validasi tersimpan di `outputs/article_verification_20261006_followup/`. Hash seluruh 561 teks sumber cocok setelah build; empat variasi teks lintas batch diperiksa terpisah dan tidak mengubah keputusan. Definisi 37 fitur tetap sama. **Tidak ada penggunaan kuota SerpApi/Gemini API atau crawling baru pada proses ini.**
+
+## 6 Oktober 2026: verifikasi antrean artikel Google Top 10
+
+Atas permintaan untuk memverifikasi artikel yang sudah di-crawl, antrean dataset utama ditinjau berdasarkan bahasa, jenis halaman, dan kelengkapan teks. Cakupan **218 artikel unik / 237 pasangan query-artikel** dari dua batch mencakup Google Top 10 serta irisan Top 10 dengan sitasi Gemini. Artikel yang hanya muncul pada dataset tambahan Gemini-only tidak termasuk antrean review ini.
+
+Pemeriksaan berbantuan LLM menghasilkan **163 artikel accepted, 50 excluded, dan 5 needs_extraction_review**. Keputusan didasarkan pada teks dan HTML lokal, bukan label sitasi. Artikel/panduan Indonesia yang substantif diterima; katalog, listing, dan halaman non-artikel dikecualikan. Penilaian ini bukan verifikasi manusia independen atau pemeriksaan kebenaran setiap klaim dalam artikel.
+
+Keputusan aktif disimpan di `data/manual/article_review.csv`. Dari 118 keputusan lama, 116 dipertahankan identik; dua status ekstraksi Hello Sehat diperbarui setelah badan artikelnya berhasil dipulihkan. Sebanyak 214 keputusan baru ditambahkan sehingga terdapat 332 keputusan aktif. Audit per artikel, alasan, cuplikan bukti, backup, hash sumber, dan validasi build tersedia di `outputs/article_verification_20261006/`. Laporan lengkap: `docs/VERIFIKASI_ARTIKEL_20261006.md`.
+
+Empat artikel dipulihkan tanpa crawling ulang: dua Hello Sehat yang sebelumnya mengambil daftar referensi Inggris (1.762 dan 632 kata Indonesia), Rumah Ginjal yang tercampur daftar kata kunci (817 kata), dan AXA Mandiri yang tercampur kartu artikel/footer (1.582 kata). Selector badan artikel ditambahkan pada ekstraktor agar berlaku juga pada proses selanjutnya. Dua paragraf promosi yang melekat pada penutup artikel AXA tetap disimpan.
+
+Kedua batch dibangun ulang dengan embedding lokal. Hasilnya:
+
+| Batch | Pasangan utama | Model-ready sebelum | Model-ready sesudah | Pertambahan |
+| --- | ---: | ---: | ---: | ---: |
+| main_01 | 325 | 153 | 186 | 33 |
+| main_02 | 900 | 308 | 453 | 145 |
+| **Total** | **1.225** | **461** | **639** | **178** |
+
+Dari 179 pasangan dengan artikel yang diterima dalam review ini, 178 masuk model-ready; satu pasangan masih memiliki `url_matching_uncertain`. Kelima artikel `needs_extraction_review` belum dapat diterima karena panduan terpotong, ekstraksi melewatkan bagian isi, teks spam, atau hanya pratinjau dokumen. Tidak ada lagi `needs_language_review` atau `needs_page_type_review` pada dataset utama. Secara keseluruhan, **586 pasangan utama belum model-ready**; angka ini juga mencakup kegagalan crawling/ekstraksi, teks terlalu pendek, halaman non-artikel, pengecualian, dan masalah pencocokan URL, sehingga tidak semuanya dapat diselesaikan dengan persetujuan review.
+
+Sebanyak 639 pasangan model-ready terdiri atas **413 label 0 dan 226 label 1**; domain kesehatan 277, keuangan 232, teknologi 130. Terdapat 583 ID artikel unik (579 URL identitas artikel) dan 224 query. Hasil masih berada pada dua berkas `data/processed/articles_main_01/model_ready.csv` dan `data/processed/articles_main_02/model_ready.csv`, belum satu berkas training gabungan. Usia publikasi masih tidak tersedia pada 191 pasangan model-ready; tidak diisi dengan nilai rekaan, dan penanganan nilai hilang tetap bagian pipeline pemodelan.
+
+Validasi offline: **13 tes ekstraktor lulus**. Audit kedua ekspor membuktikan jumlah/ID pasangan serta label, `n_cited`, dan `n_valid` seluruh 1.225 pasangan tetap sama. Seluruh 308 ID pasangan model-ready lama main_02 tetap tersedia; main_01 memiliki 153 pasangan model-ready di luar antrean review dan 33 tambahan dari antrean. Keempat hasil pemulihan berbahasa Indonesia, berstatus accepted, dan memakai selector yang diperiksa. BM25 serta fitur tekstual dihitung ulang sesuai korpus eligible yang diperbarui. Tidak ada penggunaan SerpApi atau Gemini pada verifikasi/build ini.
+
+## 5 Oktober 2026: opsi menggunakan cadangan SerpApi tanpa mengubah manifest
+
+Pemantauan terakhir `main_02` pada 4 Oktober mencatat kuota akun aktif **10 dari 250 pencarian tersisa** (240 terpakai) dan preview lokal menemukan **81 query belum dimulai**. Cadangan 10 dalam manifest menghentikan runner biasa. Opsi `--quota-reserve 0` ditambahkan untuk satu eksekusi `continue_main_dataset.py`; pemeriksaan kuota pada runner dan kolektor menggunakan nilai runtime yang sama, sedangkan konfigurasi/manifest batch tetap menyimpan cadangan 10. `--unstarted-only` tetap melewati checkpoint lama yang gagal atau terputus. Petunjuk penggunaan ada di `docs/PANDUAN_MENAMBAH_DATASET.md`.
+
+Pengujian offline untuk batas kuota dan mode lanjut lulus. Preview lokal dengan opsi baru berhasil; **belum ada panggilan SerpApi atau Gemini berbayar** dari perubahan kode ini. Pemakaian kuota aktual setelah tanggal snapshot harus diperiksa kembali saat `--run`.
+
+## 22 September 2026: penerapan review manual jenis halaman
+
+Peneliti mengirim hasil pemeriksaan **50 artikel / 53 pasangan utama** melalui `articel_review.txt`. Semua ID cocok dengan 50 artikel yang diteruskan dari review bahasa 21 September, tanpa duplikasi atau ID tidak dikenal. Catatan `accepted`, `page informasi`, dan `page panduan` dipetakan ke penerimaan jenis halaman berdasarkan rubrik yang sudah disepakati. Halaman daftar harga emas dan halaman formulir dengan informasi terbatas dipetakan ke `excluded`. Sebanyak 18 keputusan ditulis eksplisit sebagai accepted; 32 catatan deskriptif dipetakan oleh asisten. Ini merupakan **review halaman oleh peneliti**, bukan penilaian jenis halaman baru oleh LLM; keputusan bahasa terdahulu tetap memiliki provenance review asisten.
+
+Hasil review jenis halaman adalah **48 diterima dan 2 dikecualikan**. Ada satu hambatan teknis pada `article_3412cae508eb697d3d877a65` (JDIH Sukoharjo): meskipun jenis artikelnya diterima peneliti, salinan HTML hasil unduh dan teks ekstraksi berhenti pada langkah pertama JMO di tengah kalimat. Artikel ini ditahan dengan `needs_extraction_review` sampai salinan lengkap tersedia. Keputusan aktif dari 50 artikel menjadi **47 accepted / 50 pasangan**, **2 excluded / 2 pasangan**, dan **1 needs_extraction_review / 1 pasangan**. Salinan saat pengumpulan dapat berbeda dari halaman yang dilihat peneliti saat review; penerimaan jenis halaman tidak memperbaiki isi salinan secara otomatis.
+
+Keputusan diperbarui di `data/manual/article_review.csv`, dengan `reviewer=manual_user_review` dan tanggal penerapan/review yang dilaporkan **2026-09-22**. Tanggal pemeriksaan per artikel tidak dicantumkan dalam berkas masukan. Sebanyak **68 keputusan lainnya dipertahankan** dan total tetap 118 ID unik. Alasan teknis untuk artikel yang ditahan dibedakan dari keputusan jenis halaman peneliti dalam audit.
+
+Bukti dan riwayat:
+
+- `data/manual/article_page_type_review_20260922_source.txt`: salinan persis berkas masukan peneliti, SHA-256 `5f8e29643db3a757ad48536e807061e10a0f1736c7b1c37c8970245349ec24d2`.
+- `data/manual/article_page_type_review_20260922.csv`: nomor baris sumber, catatan asli, aturan pemetaan, keputusan jenis halaman peneliti, status aktif, penahanan teknis, dan keputusan sebelumnya untuk seluruh 50 ID.
+- `data/manual/article_language_review_20260921.csv`: audit bahasa sebelumnya tetap dipertahankan sebagai riwayat.
+- `outputs/review_backups/page_type_review_20260922/`: cadangan CSV keputusan dan keluaran dua batch sebelum perubahan, serta log build.
+
+Pembaruan menggunakan hasil scraping, respons Google/Gemini, dan model embedding yang sudah tersimpan. Tidak ada pencarian, pemanggilan Gemini, atau scraping baru untuk penerapan review ini. Halaman excluded tetap disimpan dalam dataset audit dengan penanda kelayakan; tidak dihapus dari data sumber.
+
+Daftar 50 artikel dari peneliti sudah ditangani seluruhnya. Di luar daftar tersebut masih ada **79 ID artikel lain / 87 pasangan utama** dengan `needs_page_type_review` (39 pasangan batch pertama dan 48 batch kedua). Antrean ini sudah ada sebelum review bahasa dan bukan kegagalan baru. Empat ID artikel / empat pasangan utama masih ditahan untuk kelengkapan/kebersihan teks: dua Hello Sehat, satu Cobisnis, dan satu JDIH Sukoharjo.
+
+Kedua build dengan `--with-embeddings` selesai (exit code 0), menggunakan `configs/article_features.json` dan `configs/article_features_02.json`:
+
+| Batch | Pasangan utama | Model-ready sebelum | Model-ready sesudah | Tambahan |
+| --- | ---: | ---: | ---: | ---: |
+| `articles_main_01` | 325 | 133 | 153 | 20 |
+| `articles_main_02` | 362 | 116 | 146 | 30 |
+| **Total** | **687** | **249** | **299** | **50** |
+
+Tambahan 50 pasangan berasal dari 47 ID artikel yang diterima; satu artikel dapat berpasangan dengan beberapa query. Sebanyak **388 pasangan utama belum siap** karena berbagai hambatan yang tetap dicatat pada dataset. Dari 299 baris model-ready, **244 lengkap seluruh fitur dan 55 masih memiliki nilai kosong**: usia publikasi kosong pada 53 baris, rerata panjang paragraf pada tiga baris, dengan satu baris beririsan. Nilai kosong tetap memerlukan prapemrosesan sesuai kebijakan model; tidak diisi dengan angka rekaan. Distribusi model-ready: label 0 sebanyak 155 dan label 1 sebanyak 144; kesehatan 116, keuangan 115, teknologi 68.
+
+Validasi membandingkan seluruh pasangan gabungan sebelum/sesudah: ID pasangan, asal sumber, label dan hitungan sitasi, bukti kredibilitas serta kecocokan URL tetap sama. Seluruh 249 pasangan siap sebelumnya dipertahankan, dan tepat 50 pasangan dari artikel accepted ditambahkan. Teks ekstraksi serta status artikel di luar 50 ID review tidak berubah. Model-ready tetap hanya Google Top-10, sedangkan Gemini-only tersedia terpisah. Definisi 37 fitur tetap sama; BM25 dihitung ulang karena korpus eligible bertambah. Laporan validasi tersimpan di `outputs/review_backups/page_type_review_20260922/review_report.json`. Angka 299 merupakan penjumlahan dua berkas model-ready, belum berkas training gabungan.
+
+## 21 September 2026: review bahasa oleh asisten LLM pada kandidat Top-10
+
+Atas permintaan peneliti, asisten meninjau **101 artikel unik yang mewakili 106 pasangan utama** berstatus `needs_language_review`. Pemilihan dibatasi pada Google Top-10, mencakup Google-only serta irisan Google/Gemini. Review berdasarkan judul dan teks awal, tengah, akhir setiap artikel; kasus tidak wajar ditinjau lebih lanjut, termasuk HTML lokal dua halaman Hello Sehat. Ini merupakan **penilaian berbantuan LLM (LLM-as-a-judge)**, bukan verifikasi manusia independen atau pembacaan setiap kata seluruh artikel. Identitas reviewer dicatat sebagai `llm_assistant_language_review`.
+
+Hasil bahasa: **96 artikel berbahasa Indonesia dan 5 didominasi Inggris**. Istilah teknis, nama produk serta referensi Inggris diperbolehkan bila narasi utama Indonesia. Penilaian tidak semata-mata mengikuti metadata `lang` atau keluaran detektor. Persentase 70–80% yang pernah disarankan dalam percakapan tidak dijadikan hasil pengukuran atau ambang baru; rubrik yang dipakai bersifat kualitatif dan didokumentasikan.
+
+| Keputusan aktif dari review ini | Artikel unik | Pasangan utama |
+| --- | ---: | ---: |
+| `accepted`: bahasa Indonesia dan syarat jenis halaman sebelumnya sudah terpenuhi | 43 | 45 |
+| `needs_page_type_review`: bahasa Indonesia sudah jelas, jenis/kelengkapan halaman belum diputuskan | 50 | 53 |
+| `needs_extraction_review`: bahasa Indonesia terverifikasi, tetapi teks ekstraksi bermasalah | 3 | 3 |
+| `excluded`: badan halaman didominasi Inggris | 5 | 5 |
+
+Lima keputusan excluded adalah halaman katalog ASUS berisi deskripsi Inggris. Dua artikel Hello Sehat memiliki paragraf Indonesia pada HTML, tetapi ekstraksi hanya mengambil daftar pustaka Inggris. Satu artikel Cobisnis memiliki narasi Indonesia disertai teks tautan promosi unduhan yang tidak terkait. Ketiganya ditandai `needs_extraction_review`; status ini tidak memenuhi syarat accepted/eligible_auto sehingga tetap tertahan dari model. Bahasa pada halaman tabel harga emas juga dikonfirmasi sebagai Indonesia, tetapi cakupan jenis halamannya tetap perlu diperiksa. Kandidat `article_candidate`/`unknown` tidak otomatis diterima hanya karena bahasanya sudah diketahui.
+
+Keputusan aktif ditambahkan ke `data/manual/article_review.csv`; **17 keputusan sebelumnya dipertahankan**, dan ID artikel tidak diduplikasi. Audit khusus tersimpan pada `data/manual/article_language_review_20260921.csv`, berisi alasan, cuplikan bukti, lokasi HTML, hash teks, jenis tindak lanjut dan tanggal review. Keyakinan `high_qualitative` bukan probabilitas terkalibrasi. Cadangan keputusan dan kedua dataset sebelum review ada di `outputs/review_backups/language_review_20260921/`.
+
+Peneliti dapat meninjau ulang melalui [REVIEW_BAHASA_ARTIKEL.md](REVIEW_BAHASA_ARTIKEL.md), yang memuat tautan semua artikel, kasus prioritas serta petunjuk mengubah keputusan aktif. Review ini tidak memeriksa kebenaran informasi, kredibilitas, atau relevansi setiap pasangan query-artikel; label sitasi tidak menjadi dasar penilaian bahasa. Tidak ada panggilan Gemini atau SerpApi untuk review ini. Pembangunan ulang memakai HTML tersimpan dan embedding lokal.
+
+Kedua build selesai. `model_ready` batch pertama bertambah **110 -> 133**, sedangkan batch kedua **94 -> 116**: total **249 pasangan utama**, bertambah 45 dari 204. Seluruh pasangan siap sebelumnya tetap tersedia. Terdapat 236 ID artikel/URL unik, dengan label 0 sebanyak 129 dan label 1 sebanyak 120; domain kesehatan 81, keuangan 103, teknologi 65. Ini hitungan dua batch, belum satu berkas training gabungan. BM25 dihitung ulang karena korpus artikel eligible bertambah.
+
+Tidak ada lagi `needs_language_review` pada dataset utama. Masih ada **438 pasangan utama belum siap**, termasuk 140 pasangan yang perlu review jenis halaman (87 sebelumnya + 53 dari review bahasa) dan 3 pasangan yang perlu pemeriksaan ekstraksi. Status belum siap lainnya tetap dicatat. Sebanyak **210 dari 249 baris model-ready** lengkap seluruh fiturnya; 37 baris kehilangan umur publikasi dan 3 kehilangan rerata panjang paragraf, dengan satu baris beririsan, sehingga **39 baris** membutuhkan penanganan nilai kosong dalam pipeline pemodelan. Tidak ada imputasi menggunakan seluruh dataset.
+
+Validasi data akhir memastikan cakupan 101 ID tepat sesuai antrean awal, tidak ada duplikasi ID review, 17 keputusan lama utuh, teks yang dinilai cocok dengan hash bukti, dan status artikel di luar cakupan tidak berubah. Label serta hitungan sitasi seluruh 687 pasangan utama dan hash respons API mentah juga tetap sama. Hanya 45 pasangan dari artikel yang baru diterima bertambah ke model-ready; status review halaman/ekstraksi dan excluded tidak masuk model. Rekap pemeriksaan dan hash CSV akhir ada di `outputs/review_backups/language_review_20260921/review_report.json`.
+
+## 21 September 2026: pemulihan teknis dataset tanpa keputusan review manual
+
+Perbaikan difokuskan pada data yang sudah terkumpul, tanpa panggilan Gemini atau pencarian SerpApi baru. Salinan keluaran sebelum perbaikan dan CSV review disimpan di `outputs/review_backups/dataset_repair_20260921/`. Respons Gemini, snapshot Google, manifest scraping dan keputusan review manual dipertahankan; hasil pencocokan ulang menjadi lapisan turunan yang dapat diaudit.
+
+### Perbaikan yang diterapkan
+
+- **Resolusi sumber sitasi:** `src/recover_article_sources.py` memulihkan tujuan URL dari hasil yang sudah tersimpan, dengan batas permintaan dan cache terpisah. Sebanyak **79 dari 93 URL** yang dahulu belum diketahui tujuannya berhasil dikenali. Header redirect Google cukup sebagai bukti tujuan, meskipun halaman penerbit gagal diakses; status tersebut tidak menyatakan artikel berhasil diunduh. TLS tetap diverifikasi. Empat belas URL yang masih gagal tetap ditandai.
+- **Pencocokan sitasi dan alias:** `src/article_source_matching.py` menghitung kembali frekuensi sitasi dari sumber yang benar-benar dirujuk pada `groundingSupports` setiap percobaan valid. Link awal Google yang berbeda dari URL tujuan yang sudah diketahui tetap dikenali. Alias hanya disatukan dengan bukti redirect scraping sukses, atau canonical sama dan judul serta teks lengkap identik. Duplikasi alias dalam satu jawaban dihitung sekali. Ketidakpastian tidak diubah menjadi label negatif.
+- **Ekstraksi isi:** selector Elementor dan beberapa struktur situs diperbaiki agar isi utama tidak tertukar dengan cuplikan atau kartu artikel terkait. Extractor version menjadi **3**, konfigurasi fitur menjadi `article_features_v5_source_matching`. Fitur semantik dihitung lokal; jumlah prediktor tetap **37**.
+- **Retry terbatas:** scraper menerima `--retry-transient-only --primary-only`. Sebanyak **57 URL Top-10** dicoba ulang dan **7 berhasil diunduh** pada putaran ini. Dibanding CSV sebelum perbaikan, total artikel berstatus sukses bertambah 10 karena build juga memasukkan tiga keberhasilan scraping yang sebelumnya sudah tersimpan pada checkpoint tetapi belum tercermin dalam CSV batch pertama. Robots disallowed, HTTP 403/404 dan non-HTML tidak dipilih dalam retry sementara.
+- **Keputusan manusia:** `preserve_pending_manual_reviews` menjaga status `needs_language_review`/`needs_page_type_review` lama sampai ada keputusan eksplisit. CSV `data/manual/article_review.csv` tidak berubah. Halaman yang kini berhasil diekstrak tetapi belum memenuhi kelayakan otomatis tetap ditahan untuk review.
+
+### Hasil setelah pembangunan ulang
+
+Unit hitungan berikut adalah **pasangan query-artikel Google Top-10**. Jumlah kandidat utama tetap 687; perbaikan meningkatkan kelayakan data yang sudah ada.
+
+| Ukuran | articles_main_01 | articles_main_02 | Total |
+| --- | ---: | ---: | ---: |
+| Kandidat utama | 325 | 362 | 687 |
+| Model-ready sebelum perbaikan | 72 | 59 | 131 |
+| Model-ready setelah perbaikan | 110 | 94 | **204** |
+| Pencocokan sitasi belum pasti setelah perbaikan | 2 | 7 | **9** |
+| Alias masih perlu pemeriksaan pada dataset utama | 2 | 1 | **3** |
+
+Jumlah model-ready bertambah **73 baris**; seluruh 131 pasangan yang sebelumnya siap tetap tersedia. Pencocokan tidak pasti turun dari 186 menjadi 9 pasangan, dan penanda alias yang belum terselesaikan turun dari 51 menjadi 3. Label dapat berubah ketika bukti sitasi baru berhasil dicocokkan; nilai sumber sebelumnya disimpan di kolom `original_*`. Ambang label tetap proporsi sitasi **>=0,5**, dengan protokol tiga slot percobaan dan minimal dua valid.
+
+Sebanyak 204 baris tersebut berasal dari **74 query**, mewakili **193 ID artikel/URL**, dengan 192 identitas artikel setelah penyatuan alias. Distribusi label: **106 negatif dan 98 positif**. Distribusi domain: kesehatan 60, keuangan 91, teknologi 53. Dataset tambahan Gemini-only tetap terpisah; 452 pasangannya memenuhi kelayakan analisis, tidak dihitung sebagai data model utama. Sebanyak 45 pasangan alias duplikat pada ekspor gabungan dipertahankan untuk audit tetapi tidak masuk pemodelan/analisis.
+
+Masih ada **483 pasangan utama yang belum siap**. Sebanyak 193 pasangan (180 URL unik) memiliki status review bahasa/jenis halaman; sisanya mencakup kegagalan unduh, teks kosong/terlalu pendek, halaman bukan artikel, bahasa bukan Indonesia, keputusan excluded sebelumnya, atau alias belum pasti. Sebagian penanda dapat tumpang tindih, sehingga jumlah per kategori hambatan tidak boleh dijumlahkan sembarangan. Perbaikan teknis tidak menjadikan semua hasil scraping layak.
+
+Pada model-ready, **180 baris lengkap seluruh prediktor**. Sebanyak 23 baris tidak memiliki `publication_age_days` karena tanggal publikasi tidak ditemukan; dua baris memiliki `mean_paragraph_word_count` kosong karena badan HTML tidak memiliki elemen paragraf `<p>`, sehingga rerata berbasis elemen tersebut tidak terdefinisi. Satu baris memiliki kedua kekosongan itu, jadi totalnya **24 baris dengan fitur belum lengkap**. Fitur model lainnya tersedia. Definisi paragraf tidak diubah hanya pada dua situs demi mengisi nilai, dan tanggal tidak dikarang. Imputasi, jika diperlukan, harus di-fit pada fold train. Model-ready menyatakan kelayakan artikel dan label, bukan jaminan seluruh fitur bebas NaN.
+
+File yang digunakan tetap `data/processed/articles_main_01/model_ready.csv` dan `data/processed/articles_main_02/model_ready.csv`. Angka 204 merupakan hitungan kedua batch, **belum berkas pelatihan gabungan**. Sebelum training lintas batch, gabungkan dengan pemeriksaan duplikasi/identitas artikel, hitung fitur korpus secara konsisten, dan atur pemisahan train/test yang mencegah artikel sama bocor ke kedua sisi.
+
+### Audit dan penggunaan berikutnya
+
+Setiap batch menyimpan `source_matching_audit.json`: bukti penyatuan URL, hash respons sumber mentah/cache pemulihan, serta salinan bukti pemulihan yang dipakai. `article_identity_url`, `original_*`, alasan kredibilitas dan metadata matching bukan prediktor. Waktu pemulihan URL dicatat terpisah dari waktu eksperimen; jawaban Gemini tidak diminta ulang. Lapisan ini memperbaiki pencocokan kandidat dalam manifest yang ada, bukan otomatis menambah seluruh URL sitasi yang baru berhasil diresolusi ke manifest scraping.
+
+Validasi: **74 tes offline lulus**, mencakup pencocokan per percobaan, canonical dengan isi berbeda, pemulihan redirect, URL Google awal/akhir yang berbeda, perlindungan review manual, retry selektif, pemisahan dataset, dan protokol kolektor. Pemeriksaan CSV akhir memastikan label sesuai percobaan valid/ambang, tidak ada pasangan duplikat siap-model, metadata audit bukan fitur, seluruh pasangan siap sebelumnya tetap tersedia, dan hash review serta respons sumber tidak berubah. Rekap beserta hash CSV tersimpan di `outputs/review_backups/dataset_repair_20260921/repair_report.json`. Kedua build menggunakan HTML/cache lokal dan mempertahankan data gagal dalam ekspor audit. Panduan lengkap dan perintah lanjutan diperbarui di `docs/PANDUAN_MENAMBAH_DATASET.md` pada bagian pemulihan teknis. **Tidak ada token Gemini atau kredit pencarian SerpApi yang digunakan dalam perbaikan ini.**
+
+## 21 September 2026: perluasan manifest untuk melanjutkan scraping main_02
+
+Error `Manifest berbeda` terjadi karena ekspor `main_02` bertambah setelah snapshot scraping dibuat pada 18 September. Konfigurasi scraping tetap identik. Manifest lama memuat 584 URL/610 pasangan; kandidat terbaru memuat 917 URL/986 pasangan dari 43 query eligible. Seluruh 610 pasangan lama identik, tanpa penghapusan; tambahan berjumlah 333 URL dan 376 pasangan.
+
+`src/scrape_articles.py` kini menerima `--extend-manifest`. Preview menghitung tambahan secara lokal tanpa menulis data. Dengan `--run`, scraper mengunci proses, membaca ulang manifest aktif, memvalidasi bahwa konfigurasi dan pasangan lama tetap sama, lalu mengarsipkan manifest sebelumnya ke `manifest_history/manifest_<sha256>.json` sebelum menyimpan perluasan. Perubahan label, URL, kelayakan pasangan lama, konfigurasi, identitas duplikat atau penghapusan pasangan ditolak. Fingerprint yang berubah hanya karena baris belum eligible boleh diperbarui dengan persetujuan flag yang sama, meskipun tambahannya nol.
+
+Checkpoint, HTML, ekstraksi dan riwayat percobaan lama tetap digunakan. URL berhasil tidak diunduh ulang; pasangan baru pada URL yang sudah diambil memakai checkpoint tersebut. Mode biasa hanya mengambil URL belum dicoba, sedangkan `--retry-failed` hanya mengulang status gagal yang diizinkan. Setelah perluasan tersimpan, perintah tanpa flag perluasan kembali dapat digunakan selama sumber tidak berubah lagi. Builder tetap membaca manifest aktif dan memisahkan Top-10/Gemini-only per pasangan query-artikel.
+
+Validasi: **33 tes offline lulus** (22 scraper dan 11 builder). Enam tes scraper baru mencakup perluasan dengan URL bersama, penggunaan ulang hasil unduhan tanpa perubahan byte, arsip manifest, resume idempoten, retry terpisah dari URL baru, penolakan perubahan/penghapusan/duplikasi, kegagalan penyimpanan arsip, preview tanpa penulisan, dan perubahan fingerprint tanpa kandidat baru. Preview data aktual berhasil untuk pengambilan baru dan retry: 417 URL belum dicoba (84 lama + 333 tambahan), serta 67 URL memenuhi status retry. Manifest lama masih mencatat 500 URL dicoba, termasuk 429 sukses.
+
+Panduan `docs/PANDUAN_MENAMBAH_DATASET.md` diperbarui: penambahan dalam batch yang sama dapat diperluas tanpa membuat `dataset_id` baru. Pada pekerjaan perbaikan ini belum ada perluasan manifest riil, scraping website, build dataset riil, atau panggilan Gemini/SerpApi. Untuk menerapkan perluasan sambil retry maksimal 10 URL, jalankan:
+
+```powershell
+python src/scrape_articles.py --config configs/article_dataset_02.json --extend-manifest --retry-failed --run --max-new-urls 10
+```
+
+Untuk mengambil URL belum dicoba, hilangkan `--retry-failed`. Setelah pengambilan/retry, jalankan `python src/build_article_dataset.py --config configs/article_features_02.json --with-embeddings` untuk memperbarui CSV final. Ini tidak memakai token Gemini atau kredit pencarian SerpApi.
+
+## 20 September 2026: perbaikan tanggal publikasi dan rute penambahan dataset
+
+Ditambahkan `src/article_dates.py` untuk membaca tanggal publikasi lengkap dengan format ISO (termasuk bentuk padat), timestamp ISO dengan pemisah jam bertitik, serta nama bulan Indonesia/Inggris dan timezone WIB/WITA/WIT. Parser tidak melengkapi tahun/hari yang hilang atau menebak urutan tanggal numerik ambigu. Tanggal modifikasi, copyright dan URL tidak menggantikan tanggal terbit. Tanggal tanpa timezone memakai asumsi UTC yang dicatat; tanggal setelah waktu scraping tetap tidak menghasilkan umur negatif.
+
+Ekstraktor artikel sekarang juga memeriksa metadata publikasi tambahan dan elemen publikasi eksplisit, dengan perlindungan terhadap elemen terkait/footer serta lebih dari satu tanggal berbeda pada selector yang sama. Tanggal mentah tetap disimpan; sumber ekstraksi dicatat pada `published_at_source`. Extractor version menjadi 2, konfigurasi fitur kedua batch menjadi `article_features_v4_publication_dates`. Perbaikan otomatis berlaku pada scraping berikutnya dan build ulang HTML lokal. Dependensi `python-dateutil==2.9.0.post0` sudah tersedia di venv dan dicatat eksplisit pada requirements.
+
+Builder menambahkan `published_at_normalized`, `publication_age_status`, `publication_timezone_assumed`, `missing_model_features` dan `model_features_complete` sebagai audit. File `missing_features_report.json` merangkum kelengkapan masing-masing fitur pada dataset utama dan model_ready. Daftar 37 prediktor dan aturan label tetap sama. Metadata audit tidak menjadi prediktor. Missing value yang tidak dapat dipulihkan tetap kosong; build tidak melakukan imputasi menggunakan keseluruhan dataset. Model_ready menyatakan kelayakan artikel/label, bukan jaminan semua nilai fitur tersedia. Penanganan NaN atau imputasi yang di-fit hanya pada fold train tetap bagian pipeline pemodelan berikutnya.
+
+Pemeriksaan progres menemukan 306 query terjadwal (41 + 265); `main_02` memiliki 27 query selesai, 1 terputus dan 237 belum dimulai. Dari 584 URL pada manifest `articles_main_02`, 500 sudah dicoba. **Seluruh 84 URL tersisa adalah Gemini-only**, sehingga melengkapinya tidak menambah pasangan model utama. Dua snapshot artikel memiliki 557 pasangan utama dari 65 query eligible, dengan 109 pasangan model_ready saat pemeriksaan.
+
+Untuk melanjutkan query baru tanpa membayar slot tambahan pada query lama yang melewati jendela 6 jam, runner mendapat opsi `--unstarted-only`. Mode ini melewati setiap query yang sudah mempunyai checkpoint, tidak mengubah arsipnya, dan tidak dapat digabung dengan recovery. Kolektor juga memfilter pekerjaan sebelum menerapkan batas jumlah query, sehingga query lama tidak menghabiskan slot eksekusi. Pengumpulan lama dapat dipulihkan melalui alur terpisah jika masih memenuhi protokol; mode ini tidak menyatakan query terputus sebagai selesai/valid. Preview lokal mengonfirmasi 237 query tersedia.
+
+`docs/PANDUAN_MENAMBAH_DATASET.md` diperbarui dengan rute menuju 2.000–3.000 pasangan utama: review hambatan, pengumpulan query accepted tersisa, snapshot scraping baru setelah sumber bertambah, pembacaan laporan missing value, proyeksi kebutuhan query berdasarkan hasil aktual, penambahan PAA, penggabungan korpus dan persiapan train/test. Target tidak menghitung Gemini-only atau pasangan duplikat dari snapshot tumpang tindih. Angka kuota yang tersimpan diberi tanggal dan tidak diklaim sebagai saldo terkini.
+
+Validasi offline: 60 tes lulus pada parser tanggal (5), ekstraksi fitur (10), builder (11), scraper (16), kolektor utama (14), dan runner (4). Tidak ada panggilan API berbayar atau pengunduhan artikel baru pada pekerjaan ini; pembangunan ulang menggunakan HTML tersimpan dan cache embedding lokal.
+
+Kedua build selesai dengan sukses. `articles_main_01` tetap 325 pasangan utama/72 model_ready; umur publikasi kosong turun dari 176 ke 174 pada dataset utama dan 13 ke 11 pada model_ready. `articles_main_02` tetap 232 pasangan utama/37 model_ready; umur publikasi kosong turun dari 132 ke 127 pada dataset utama dan 4 ke 3 pada model_ready. Total tujuh baris utama dipulihkan (enam format tanggal dan satu ekstraksi elemen HTML). Seluruh nilai umur yang masih kosong pada dataset utama berstatus `missing_publication_date`; tanggal yang berhasil diperoleh semuanya sudah dapat dihitung. Pada gabungan 109 baris model_ready, 95 lengkap seluruh fitur dan 14 masih tidak memiliki umur publikasi; tidak ada fitur model lain yang kosong. Jumlah baris/label tidak berubah. Ketiadaan tanggal tidak diatasi dengan mengarang tanggal atau mengisi nol.
 
 ## 18 September 2026: bukti kredibilitas dipertahankan sebagai metadata audit
 
 Atas keputusan peneliti, fitur model tetap biner melalui `domain_authority_level`, sedangkan `credibility_evidence` dan `credibility_reason` ditambahkan kembali ke ekspor lengkap. Builder membaca `data/manual/source_credibility.csv`: `evidence_urls` dan `reason` lama disalin sebagai catatan mentah apabila hostname cocok. Untuk Level 2 tanpa audit lama, URL final yang diamati menjadi bukti awal dan alasan mengikuti basis aturan biner. Level 1 yang belum pernah diperiksa menyimpan bukti kosong dan alasan default.
 
 Kolom tersebut tersedia pada `articles.csv`, `dataset.csv`, `dataset_gemini_only.csv`, dan `dataset_union.csv`. Keduanya dikeluarkan secara eksplisit dari daftar prediktor dan tidak tersedia di `model_ready.csv`; label, kelayakan artikel, serta level biner tidak berubah karena isi metadata audit. `domain_authority_basis` tetap menjadi alasan aturan aktif. Alasan dari CSV lama adalah bukti historis rubrik 1–5 dan dapat berbeda dari keputusan biner aktif. Konfigurasi fitur mencatat lokasi sumber audit melalui `credibility_audit_csv`. Sebelas tes builder lulus sebelum pembangunan ulang dataset lokal.
+
+Dataset `articles_main_01` kemudian selesai dibangun ulang dari 870 checkpoint lokal tanpa panggilan SerpApi/Gemini: 330 artikel eligible, 942 pasangan gabungan, dan 72 pasangan utama siap-model. Sebanyak 432 artikel memiliki bukti audit tidak kosong dan seluruh 870 memiliki alasan. Jumlah baris/fitur model tidak berubah.
+
+Konfigurasi `configs/article_dataset_02.json` dan `configs/article_features_02.json` disiapkan untuk scraping terpisah dari `main_02`. Preview pada 18 September menemukan **610 pasangan eligible dan 584 URL unik** dari 27 query selesai/eligible; 571 URL belum pernah dicoba pada `articles_main_01`, sedangkan 13 beririsan dengan checkpoint lama. Belum ada permintaan halaman dari konfigurasi baru. Eksekusi pertama dengan `--run` akan membekukan snapshot ini; perubahan ekspor `main_02` sesudahnya harus memakai dataset_id artikel baru.
 
 ## 17 September 2026: recovery Gemini untuk kegagalan transport
 

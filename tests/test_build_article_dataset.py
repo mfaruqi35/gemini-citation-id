@@ -94,6 +94,37 @@ class DatasetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bm25_scores('campak', ['campak'], reference_documents=[])
 
+    def test_pending_manual_review_is_not_auto_accepted_by_reextraction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            config = {'scrape_config': 'configs/crawl.json', 'domain_authority_config': 'configs/rules.json',
+                      'article_review_csv': 'data/manual/review.csv', 'citation_threshold': .5,
+                      'bm25_k1': 1.5, 'bm25_b': .75, 'feature_version': 'test',
+                      'preserve_pending_manual_reviews': True}
+            write_json(root/config['scrape_config'], {'dataset_id': 'a'})
+            write_json(root/config['domain_authority_config'], {
+                'version': 'test', 'level_meaning': {'1': 'low', '2': 'high'},
+                'automatic_level_2_suffixes': [], 'level_2_hosts': {},
+                'default': {'level': 1, 'basis': 'default_other_or_ambiguous'}})
+            pair = {**self.pair(), 'pair_id': 'p', 'query_id': 'q', 'query_text': 'campak',
+                    'source_batch': 'main_test', 'domain': 'kesehatan', 'article_id': 'article_a',
+                    'article_url': 'https://example.com/article', 'in_google_top10': 'True',
+                    'in_gemini_citations': 'True', 'candidate_origin': 'google_and_gemini'}
+            raw = root/'data/raw/articles/a'
+            write_json(raw/'manifest.json', {'articles': [{'article_id': 'article_a', 'article_url': pair['article_url']}],
+                                            'pairs': [pair]})
+            write_json(raw/'records/article_a.json', {'status': 'success',
+                'attempts': [{'started_at': '2026-09-01T00:00:00+00:00', 'final_url': pair['article_url']}],
+                'extraction': {'title': 'Campak', 'text': 'Artikel mengenai campak.', 'language': 'id',
+                               'article_review_status': 'eligible_auto'}})
+            output = root/'data/processed/a'
+            write_csv(output/'articles.csv', [{'article_id': 'article_a', 'article_review_status': 'needs_language_review'}],
+                      ['article_id', 'article_review_status'])
+            result = build(config, root, with_embeddings=False, reextract=False)
+            self.assertEqual(result[0]['article_review_status'], 'needs_language_review')
+            self.assertFalse(result[0]['ready_for_model'])
+            self.assertFalse((root/config['article_review_csv']).exists())
+
     def test_resume_scraping_routes_new_pairs_without_refetching_old_or_training_on_supplement(self):
         import numpy as np
         with tempfile.TemporaryDirectory() as directory:
@@ -161,6 +192,10 @@ class DatasetTests(unittest.TestCase):
                 self.assertEqual(next(r for r in supplement if r['pair_id'] == 'p4')['crawl_status'], 'robots_unavailable')
                 self.assertEqual({r['pair_id'] for r in read_rows(output / 'model_ready.csv')}, {'p1', 'p3'})
                 self.assertNotIn('credibility_evidence', read_rows(output / 'model_ready.csv')[0])
+                self.assertIn('publication_age_status', article_rows[0])
+                report = read_json(output / 'missing_features_report.json')
+                self.assertEqual(report['model_ready']['publication_age_days'], {'missing': 2, 'total': 2})
+                self.assertNotIn('publication_age_status', read_rows(output / 'model_ready.csv')[0])
                 self.assertEqual(read_json(output / 'summary.json')['attempted_urls'], 3)
                 # Rebuilding locally cannot add pairs or require another fetch.
                 again = build(config, root, with_embeddings=True, reextract=False)

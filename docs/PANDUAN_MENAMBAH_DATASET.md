@@ -1,5 +1,206 @@
 # Panduan menambah dataset: PAA sampai artikel dan fitur
 
+Batch baru `main_03` telah disiapkan pada 7 Oktober 2026 dari PAA yang tersimpan di respons Google `main_02`: **75 kueri terpilih**, 25 per domain. Perintah yang sudah disesuaikan untuk batch ini ada di [MULAI_BATCH_03.md](MULAI_BATCH_03.md). Bagian contoh `main_02` di bawah tetap menjadi riwayat alur umum.
+
+## Menggunakan 10 pencarian terakhir akun SerpApi saat ini (5 Oktober 2026)
+
+Snapshot pemantauan terakhir pada 4 Oktober mencatat 240/250 pencarian terpakai dan 81 query `main_02` belum dimulai. Konfigurasi batch yang sudah dibekukan menyimpan `serp_quota_reserve: 10`, sehingga perintah biasa berhenti ketika kuota tinggal 10. Gunakan opsi **runtime** berikut untuk memakai cadangan tersebut pada query `main_02` tanpa mengubah manifest atau aturan penelitian:
+
+```powershell
+# Preview lokal; tidak memakai API
+python src/continue_main_dataset.py --unstarted-only --max-queries 10 --check-every 1 --quota-reserve 0
+
+# Jalankan maksimal 10 query baru dengan key SerpApi yang aktif
+python src/continue_main_dataset.py --run --unstarted-only --max-queries 10 --check-every 1 --quota-reserve 0
+```
+
+Runner memeriksa sisa kuota sebelum setiap query dan kolektor melakukan pemeriksaan lagi sebelum meminta pencarian. Jumlah query yang benar-benar berhasil bisa kurang dari 10 jika permintaan SerpApi/Gemini gagal; respons dan checkpoint lama tetap dipertahankan. `--unstarted-only` melewati checkpoint gagal atau terputus, tidak memulihkannya. Satu query baru memakai kira-kira satu pencarian SerpApi dan tiga panggilan Gemini. Periksa saldo Gemini di AI Studio sebelum `--run`; runner hanya dapat menghitung token, bukan saldo rupiah. Setelah akun pertama habis, ganti key SerpApi pada environment yang aktif, lalu jalankan perintah biasa tanpa `--quota-reserve 0` untuk kembali menyisakan cadangan 10 pada akun berikutnya.
+
+## Review jenis halaman oleh peneliti (22 September 2026)
+
+Sebanyak 50 artikel yang diteruskan dari review bahasa sudah diperiksa peneliti. Keputusan aktif dari kelompok ini: **47 accepted, 2 excluded, dan 1 needs_extraction_review**. Catatan halaman informasi/panduan dipetakan ke accepted; daftar harga emas dan formulir dengan informasi terbatas dipetakan ke excluded. Artikel JDIH Sukoharjo diterima jenis halamannya tetapi tetap ditahan karena salinan HTML/teks yang tersimpan terputus. Bersama tiga masalah sebelumnya, ada empat artikel dalam kelompok review ini yang masih membutuhkan pemeriksaan/perbaikan salinan teks.
+
+Gunakan [article_review.csv](../data/manual/article_review.csv) untuk keputusan aktif dan [audit review manual](../data/manual/article_page_type_review_20260922.csv) untuk catatan asli serta riwayat pemetaan. Angka/status pada bagian 21 September di bawah adalah snapshot sebelum review manual ini. Lihat [catatan review](REVIEW_BAHASA_ARTIKEL.md) untuk detail. Kandidat jenis halaman lain di luar 50 artikel ini tetap mengikuti statusnya masing-masing.
+
+Build terbaru menghasilkan **153 + 146 = 299 pasangan utama model-ready**, bertambah 50 dari 249. Sebanyak **244 baris lengkap seluruh fitur**, sementara **55 baris** masih membutuhkan penanganan nilai kosong saat prapemrosesan. File yang digunakan tetap `data/processed/articles_main_01/model_ready.csv` dan `data/processed/articles_main_02/model_ready.csv`. Di luar daftar 50 artikel yang sudah ditinjau, masih ada **79 artikel / 87 pasangan utama** pada antrean `needs_page_type_review`. Empat kasus ekstraksi tetap ditahan sampai teks yang memadai tersedia. Tidak ada panggilan Gemini atau SerpApi untuk pembaruan ini.
+
+## Review bahasa kandidat Top-10 (21 September 2026)
+
+Sebanyak 101 artikel / 106 pasangan utama sudah ditinjau oleh asisten LLM: 96 artikel menggunakan bahasa Indonesia dan 5 didominasi Inggris. Keputusan aktif ada di `data/manual/article_review.csv`; [catatan review bahasa](REVIEW_BAHASA_ARTIKEL.md) menjelaskan hasil, bukti dan langkah verifikasi ulang. Sebanyak 43 artikel diterima, 50 masih membutuhkan review jenis halaman, dan 3 berstatus `needs_extraction_review` karena masalah teks ekstraksi. Kelulusan bahasa saja tidak memastikan kelayakan artikel.
+
+Build setelah review menghasilkan **133 + 116 = 249 pasangan model-ready**, naik dari 204. Sebanyak 210 baris lengkap seluruh prediktor; 39 baris masih membutuhkan penanganan nilai kosong. Angka 204 pada bagian pemulihan teknis di bawah merupakan snapshot sebelum review bahasa ini.
+
+Jika memeriksa ulang, ubah baris sesuai `article_id` pada `article_review.csv`, termasuk alasan, reviewer dan tanggal; jangan membuat ID duplikat. CSV audit `article_language_review_20260921.csv` menyimpan keputusan awal asisten, bukan sumber aktif builder. Status `needs_extraction_review` harus tetap ditahan sampai teks ekstraksi diperiksa/diperbaiki. Jalankan build ulang batch terkait setelah koreksi keputusan.
+
+## Pemulihan teknis sumber dan artikel (21 September 2026)
+
+Pemulihan ini tidak meminta jawaban Gemini baru atau pencarian SerpApi. Status artikel yang masih `needs_language_review`/`needs_page_type_review` tetap menunggu keputusan di `article_review.csv`. Kriteria bahasa, panjang minimal, ambang sitasi dan jumlah percobaan tetap sama.
+
+Hasil perbaikan 21 September tercatat di [PROGRESS.md](PROGRESS.md): **110 + 94 = 204 pasangan utama model-ready**, meningkat dari 131. Kedua CSV tetap berada dalam direktori batch masing-masing. Sebanyak 23 baris tidak memiliki tanggal publikasi dan dua baris tidak memiliki rerata panjang paragraf karena elemen `<p>` tidak tersedia. Total 24 baris membutuhkan penanganan nilai kosong saat prapemrosesan, dengan aturan yang di-fit pada data train. Angka pada bagian 20 September dan bagian yang lebih lama di bawah adalah snapshot historis.
+
+```powershell
+# Periksa URL sumber tersimpan yang belum diketahui tujuannya
+python src/recover_article_sources.py
+
+# Pulihkan maksimal 100 URL, dengan bukti terpisah dari respons API mentah
+python src/recover_article_sources.py --run --max-new-urls 100
+
+# Jika diperlukan pada kesempatan berikutnya: coba ulang resolusi yang gagal
+python src/recover_article_sources.py --run --retry-failed --max-new-urls 30
+
+# Retry hanya kegagalan sementara pada kandidat Top-10 (preview jika --run dihilangkan)
+python src/scrape_articles.py --config configs/article_dataset.json --retry-transient-only --primary-only --run --max-new-urls 20
+python src/scrape_articles.py --config configs/article_dataset_02.json --retry-transient-only --primary-only --run --max-new-urls 20
+
+# Bangun ulang dari HTML, percobaan Gemini tersimpan dan bukti pemulihan
+python src/build_article_dataset.py --config configs/article_features.json --with-embeddings
+python src/build_article_dataset.py --config configs/article_features_02.json --with-embeddings
+```
+
+Jika sumber scraper bertambah, tambahkan `--extend-manifest` sesuai bagian berikutnya. `--retry-transient-only` tidak boleh digabung dengan `--retry-failed`; robots disallowed, HTTP 403/404, dan halaman non-HTML tidak dipilih dalam retry sementara. Tidak ada bypass robots atau penonaktifan verifikasi TLS.
+
+`data/interim/article_repair/url_resolutions.json` menyimpan hasil pemulihan dan riwayatnya. Status `destination_redirect_observed` berarti header redirect Google menunjukkan URL tujuan, bukan jaminan halaman dapat diunduh atau artikelnya layak. Respons Gemini dan manifest asli tetap disimpan. Builder memakai bukti baru sebagai lapisan turunan sehingga tidak perlu mengubah label dalam manifest scraper yang dibekukan.
+
+Alias disatukan untuk pencocokan bila ada redirect yang diamati saat scraping sukses, atau canonical sama disertai judul dan teks lengkap identik (minimal 100 kata). Canonical saja tidak cukup untuk menggabungkan dua halaman. `source_matching_audit.json` mencatat bukti, hash file sumber mentah/cache pemulihan, dan salinan bukti pemulihan yang benar-benar dipakai. `article_identity_url` adalah identitas audit/pengelompokan, **bukan fitur prediksi**. Label dihitung ulang per percobaan valid; dua alias dalam satu jawaban dihitung satu kali. Kolom `original_*` mempertahankan nilai sebelum pencocokan ulang.
+
+Pasangan alias ganda untuk query yang sama tetap berada dalam ekspor audit dengan `duplicate_pair_of`, tetapi hanya satu wakil dapat masuk model_ready. Wakil Google Top-10 diprioritaskan atas tambahan Gemini-only. Halaman dengan isi berbeda atau alias belum pasti tetap tertahan. Ketidakpastian yang tersisa tidak dijadikan label negatif.
+
+Ekstraktor diperbaiki untuk konten Elementor serta beberapa situs yang HTML lengkapnya dahulu hanya terbaca sebagai cuplikan. Artikel yang tetap membutuhkan penilaian manusia tidak otomatis diterima; pengaturan `preserve_pending_manual_reviews` mempertahankan status review lama sampai keputusan eksplisit dicatat. Setelah pemulihan, jumlah model_ready mengikuti build terbaru, tidak boleh diperkirakan dengan menjumlah semua kategori kegagalan yang tumpang tindih.
+
+## Perbaikan manifest scraping setelah data sumber bertambah (21 September 2026)
+
+Jika muncul `ValueError: Manifest berbeda`, gunakan `--extend-manifest` untuk memeriksa dan menerima **penambahan data dalam batch sumber yang sama**. Tidak perlu mengganti `dataset_id` untuk kasus ini. Semua pasangan lama harus tetap identik, termasuk URL, label dan status kelayakan. Penghapusan pasangan atau perubahan konfigurasi tetap ditolak dan perlu ditinjau atau dibuatkan dataset artikel baru.
+
+Saat pemeriksaan, manifest `articles_main_02` berisi 584 URL/610 pasangan, sedangkan ekspor sumber terbarunya berisi 917 URL/986 pasangan eligible. Ada 333 URL dan 376 pasangan tambahan; seluruh pasangan lama identik. Dari manifest lama, 500 URL telah dicoba dan 84 belum dicoba. Setelah perluasan tersedia 417 URL belum dicoba dan 67 URL berstatus yang diizinkan untuk retry. Angka ini adalah snapshot saat pemeriksaan, bukan jumlah hasil scraping yang pasti berhasil.
+
+```powershell
+# Preview perluasan dan URL belum dicoba; tidak mengubah data atau mengakses jaringan
+python src/scrape_articles.py --config configs/article_dataset_02.json --extend-manifest --max-new-urls 10
+
+# Simpan perluasan, lalu ambil maksimal 10 URL belum dicoba
+python src/scrape_articles.py --config configs/article_dataset_02.json --extend-manifest --run --max-new-urls 10
+
+# Alternatif: simpan perluasan dan coba kembali maksimal 10 URL gagal saja
+python src/scrape_articles.py --config configs/article_dataset_02.json --extend-manifest --retry-failed --run --max-new-urls 10
+
+# Setelah scraping/retry, perbarui dataset utama, tambahan, dan model_ready
+python src/build_article_dataset.py --config configs/article_features_02.json --with-embeddings
+```
+
+Pilih perintah URL baru atau retry sesuai pekerjaan yang ingin dilakukan. `--retry-failed` **hanya** memilih checkpoint gagal yang diperbolehkan untuk dicoba ulang; URL belum dicoba tidak diambil dalam mode ini. Untuk preview retry, hilangkan `--run`. URL berhasil tidak diunduh ulang. Jika URL lama muncul pada query baru, pasangan baru ditambahkan dan hasil scraping URL tersebut digunakan kembali.
+
+Preview selalu baca saja. Manifest baru baru disimpan ketika `--run` diberikan, setelah memperoleh `running.lock` dan memvalidasi ulang manifest aktif. Manifest sebelumnya diarsipkan di `data/raw/articles/articles_main_02/manifest_history/` sebelum diganti. HTML, ekstraksi, dan riwayat percobaan lama dipertahankan. Setelah tersimpan, `--extend-manifest` boleh tetap dicantumkan atau dihilangkan selama sumber tidak berubah lagi. Tidak ada penggabungan otomatis yang menerima perubahan label lama.
+
+Scraping/retry mengakses website langsung; **tidak memakai token Gemini atau kredit pencarian SerpApi**. Build memakai HTML lokal dan cache embedding; model embedding dapat diunduh jika belum tersedia, tetapi tidak memakai kedua API tersebut. Build diperlukan untuk memperbarui CSV final setelah scraping. Penambahan pasangan tetap dipisahkan per query: Top-10 masuk dataset utama dan Gemini-only masuk dataset tambahan.
+
+Saat fitur ini ditambahkan, hanya pengujian offline dan preview data aktual yang dijalankan. Manifest riil dan hasil dataset belum diperluas/dibangun ulang oleh perbaikan kode ini. Angka pada bagian bertanggal lebih lama di bawah adalah riwayat; instruksi perluasan pada bagian ini menggantikan keharusan membuat snapshot baru untuk setiap penambahan data.
+
+## Rute terbaru menuju 2.000–3.000 baris utama (20 September 2026)
+
+Bagian ini menjelaskan rute pengumpulan dan snapshot pada 20 September; untuk jumlah data terbaru setelah pemulihan, baca bagian 21 September di atas dan [PROGRESS.md](PROGRESS.md). Target dihitung sebagai **pasangan query–artikel Google Top-10 yang layak dan memiliki label pasti**, bukan jumlah URL gabungan. Artikel Gemini-only tetap menjadi dataset tambahan dan tidak dihitung untuk memenuhi target model utama. URL sama pada dua query menghasilkan dua pasangan, tetapi bukan dua artikel unik; laporkan keduanya.
+
+### Posisi saat pemeriksaan
+
+| Tahap | Posisi |
+| --- | --- |
+| Query dalam dua manifest utama | 306: `main_01` 41 dan `main_02` 265 |
+| `main_02` | 27 query selesai, 1 terputus, 237 belum dimulai |
+| Scraping `articles_main_01` | 870 dari 870 URL telah dicoba |
+| Scraping `articles_main_02` | 500 dari 584 URL telah dicoba |
+| Sisa 84 URL pada snapshot artikel kedua | **Semua Gemini-only**; tidak menambah kandidat model utama |
+| Dataset utama dari dua snapshot artikel | 325 + 232 = 557 pasangan dari 65 query eligible |
+| `model_ready` pada pemeriksaan | 72 + 37 = 109 pasangan; ini bukan gabungan final untuk training |
+
+Sebanyak 109 pasangan tersebut mewakili 105 URL unik, dengan label 0 sebanyak 54 dan label 1 sebanyak 55. Distribusi domainnya: kesehatan 25, keuangan 61 dan teknologi 23. Ini hitungan gabungan untuk pemantauan, belum ekspor training gabungan dengan korpus BM25 bersama.
+
+Snapshot berbayar terakhir tersimpan pada 17 September: SerpApi tersisa 124 pencarian. **Itu bukan kuota terkini.** Runner memeriksa ulang kuota ketika dijalankan dengan `--run`. Saldo rupiah Gemini tetap diperiksa lewat AI Studio; file lokal hanya merekap token respons yang tersimpan.
+
+### 1. Periksa hasil build dan tangani kandidat yang tertahan
+
+Gunakan `data/processed/articles_main_01/dataset.csv` dan `data/processed/articles_main_02/dataset.csv`. Filter `ready_for_model=False`, lalu baca `not_ready_reason`:
+
+- `article_not_eligible`: tinjau `articles.csv`, HTML/teks, bahasa dan jenis halaman melalui Notebook 06. Masukkan keputusan yang benar ke `data/manual/article_review.csv`; jangan menerima halaman non-artikel, teks terpotong, atau bahasa yang tidak sesuai hanya demi jumlah.
+- `semantic_not_computed`: jika artikel sudah eligible, lakukan build dengan `--with-embeddings`.
+- `url_matching_uncertain`: perlu pemeriksaan resolusi dan kecocokan URL terhadap sitasi asli. CSV review artikel tidak menyelesaikan label ini. Jangan mengisi label kosong sebagai 0 atau 1 tanpa bukti dan pembaruan sumber yang konsisten.
+- `url_alias_needs_review`: tinjau URL final/canonical yang beririsan. Menerima artikel pada CSV review tidak otomatis menyelesaikan konflik alias.
+- Gagal unduh sementara: scraper mendukung `--retry-failed`, tetapi retry juga mencakup beberapa status yang mungkin tetap gagal; periksa preview dan batasi jumlah. Halaman terlarang robots/challenge tidak diatasi dengan bypass.
+
+Setelah review, jalankan ulang build. Kedua perintah ini lokal, **tanpa token Gemini atau kredit pencarian SerpApi**:
+
+```powershell
+python src/build_article_dataset.py --config configs/article_features.json --with-embeddings
+python src/build_article_dataset.py --config configs/article_features_02.json --with-embeddings
+```
+
+Scraper berikutnya otomatis memakai ekstraktor tanggal yang diperbaiki. Build juga mengekstrak ulang HTML lama, tanpa mengunduh ulang artikel. `publication_age_days` adalah umur saat scraping, bukan saat training atau saat query dikirim ke Gemini. Parser mendukung tanggal ISO, timestamp bertitik, serta nama bulan Indonesia/Inggris yang lengkap dengan hari dan tahun. Tanggal parsial/ambigu tidak ditebak. Tanggal tanpa timezone diasumsikan UTC dan ditandai; nilai yang melampaui waktu scraping tetap kosong.
+
+Kolom audit baru pada ekspor lengkap:
+
+| Kolom/file | Kegunaan |
+| --- | --- |
+| `published_at_source` | Sumber tanggal: JSON-LD, metadata atau selector HTML |
+| `published_at_normalized` | Tanggal yang berhasil dibaca, dalam ISO |
+| `publication_age_status` | `available`, `missing_publication_date`, `unparseable_publication_date`, `future_publication_date`, atau `invalid_retrieval_date` |
+| `publication_timezone_assumed` | Apakah timezone harus diasumsikan UTC |
+| `missing_model_features` / `model_features_complete` | Daftar fitur kosong per pasangan / apakah semua terisi |
+| `missing_features_report.json` | Jumlah nilai hilang per fitur pada dataset utama dan model_ready |
+
+Hasil build ulang 20 September: umur publikasi kosong pada dataset utama turun dari 176 ke 174 baris (batch 01) dan 132 ke 127 (batch 02). Pada model_ready turun dari 13 ke 11 dan 4 ke 3. Dari 109 baris layak, **95 lengkap seluruh fitur dan 14 masih tanpa umur publikasi**; semua fitur model lainnya terisi. Seluruh tanggal publikasi yang sudah diperoleh berhasil dihitung. Sisa kosong berarti tanggal belum ditemukan oleh ekstraktor, bukan bukti pasti bahwa halaman tidak menampilkan tanggal.
+
+Tanggal modifikasi, copyright dan tanggal dari URL tidak digunakan sebagai pengganti tanggal terbit. Kosong bukan berarti nol. `model_ready.csv` tetap berarti lolos kriteria kelayakan dan label, **bukan jaminan seluruh fitur tersedia**. Untuk XGBoost, nilai fitur hilang dapat dipertahankan sebagai NaN. Jika model/pipeline membutuhkan imputasi, fit median/strategi imputasi hanya pada data latih di masing-masing fold, lalu pakai transformasi yang sama untuk validasi, test dan prediksi. Jangan menghitung median dari semua data sebelum split. Jangan melakukan imputasi label. Training dan preprocessing final belum dijalankan oleh build ini.
+
+### 2. Lanjutkan pengumpulan dari query accepted yang sudah ada
+
+Belum perlu membayar pencarian PAA baru untuk tahap berikutnya: masih ada **237 query yang belum dimulai** pada `main_02`.
+
+```powershell
+# Preview lokal
+python src/continue_main_dataset.py
+
+# Pengumpulan berbayar bertahap
+python src/continue_main_dataset.py --run --unstarted-only --max-queries 30 --check-every 5
+```
+
+Setiap query baru membutuhkan anggaran sekitar satu pencarian SerpApi untuk Google organik dan tiga panggilan Gemini, bukan tiga token. Biaya Gemini bergantung jumlah token dan grounding; gunakan batas billing pribadi. Parameter tetap tiga percobaan, minimal dua valid, dan label proporsi sitasi >=0,5.
+
+**Catatan satu query terputus:** checkpoint 17 September memiliki satu trial selesai dan satu error; slot ketiga belum dipanggil. Melanjutkannya sekarang melewati jendela pengumpulan 6 jam, sehingga tidak menghasilkan query eligible walaupun slot terakhir berhasil. Flag baru `--unstarted-only` di atas melewati seluruh query yang sudah memiliki checkpoint, termasuk query terputus tersebut, agar fokus pada 237 query baru. Arsip lama tidak diubah. Tanpa flag ini, runner biasa masih mencoba melanjutkan query terputus. Jangan mengubah timestamp untuk membuatnya valid. Pengumpulan ulang yang ingin dipakai memerlukan batch baru berisi Google dan ketiga percobaan Gemini yang berdekatan waktunya. `--recover-gemini` bukan cara memulihkan jendela yang sudah kedaluwarsa dan tidak boleh digabung dengan `--unstarted-only`. Jika eksekusi baru terputus lagi, mode ini juga melewati query itu; tinjau pemulihannya secara terpisah.
+
+### 3. Perluas manifest scraping setelah URL bertambah
+
+Pembaruan 21 September: selesaikan satu tahap pengumpulan/ekspor URL, lalu gunakan `--extend-manifest` seperti bagian awal panduan untuk memperluas `articles_main_02`. Tetap gunakan config scraping dan config fitur `_02`. Checkpoint lama digunakan kembali dan build memisahkan pasangan Top-10/Gemini-only secara otomatis. Sumber yang bertambah juga dapat menambahkan pasangan Top-10 baru; keterangan 84 URL Gemini-only pada snapshot 20 September hanya berlaku untuk sisa manifest lamanya.
+
+Jika konfigurasi, daftar batch sumber, atau nilai pasangan lama memang berubah, perluasan akan ditolak. Tinjau penyebabnya; untuk perubahan yang disengaja, buat config scraping dengan `dataset_id` baru dan config fitur yang menunjuk ke sana. Checkpoint lintas ID dataset artikel belum digunakan ulang otomatis, sehingga snapshot baru dapat mengunduh ulang URL lama. Jangan menghitung pasangan yang sama pada snapshot lama dan baru sebagai sampel berbeda.
+
+### 4. Ukur hasil per query sebelum menentukan tambahan PAA
+
+Secara teoritis, 306 query memberi **maksimal 3.060 kandidat pasangan Top-10**, sebelum hasil Google kurang dari 10, query tidak valid, kegagalan scraping, halaman non-artikel, ketidakpastian label dan duplikasi. Maka 306 query **tidak menjamin** 2.000–3.000 baris siap model.
+
+Pada snapshot sekarang, 109/65 sekitar **1,68 baris siap-model per query eligible**. Nilai ini belum final karena review dan resolusi label masih tertahan. Ukur ulang setelah menuntaskan review dan satu tahap pengumpulan baru.
+
+| Rata-rata baris siap-model per query | Perkiraan total query untuk 2.000 baris | Untuk 3.000 baris |
+| --- | ---: | ---: |
+| Sekitar 1,68 (hasil sementara sekarang) | sekitar 1.200 | sekitar 1.800 |
+| 2 | 1.000 | 1.500 |
+| 4 | 500 | 750 |
+| 6 | 334 | 500 |
+| 8 | 250 | 375 |
+
+Tabel adalah skenario, bukan janji hasil; query gagal akan menambah kebutuhan pengumpulan. Hitung kebutuhan query tambahan sebagai `ceil((target - baris_layak_unik_saat_ini) / rata_rata_hasil_query_baru)`. Pantau juga label 0/1 dan jumlah tiap domain, bukan total saja. Jangan melonggarkan kriteria atau memilih query berdasarkan label yang diharapkan untuk memenuhi target.
+
+Jika stok query tidak cukup, gunakan **bagian 3–6** di bawah untuk menambah PAA, mempertahankan jejak keyword Trends, meninjau kandidat dan membekukan batch query baru. PAA dari respons Google yang sudah disimpan bisa diekstrak lokal tanpa pencarian baru: tambahkan `main_02` ke `main_batches` pada `configs/query_expansion_01.json`, lalu jalankan:
+
+```powershell
+python src/prepare_query_expansion.py --config configs/query_expansion_01.json
+```
+
+Review kandidat baru di Notebook 05/CSV keputusan, lalu siapkan snapshot query baru (`main_03`, dst.). Pertahankan keputusan lama dan singkirkan query yang sudah berada di manifest utama mana pun. Skrip persiapan membaca keputusan yang tersimpan; tidak memanggil LLM otomatis. Meminta PAA baru lewat SerpApi memakai kredit pencarian; mengambil pertanyaannya dari respons tersimpan tidak. Query baru yang diproses ke Google dan Gemini tetap memakai kedua layanan.
+
+### 5. Bekukan dataset akhir sebelum training
+
+Gunakan kebijakan penggabungan pada bagian 10: satu korpus BM25 yang konsisten, deduplikasi pasangan, audit alias, dan jejak sumber. Jangan langsung concat beberapa `model_ready.csv` dengan statistik BM25 berbeda dan melatih model. Snapshot scraping yang baru menggantikan cakupan lama tidak boleh ditambahkan sebagai sampel baru.
+
+Target selesai saat terdapat 2.000–3.000 **pasangan utama layak, label pasti, tanpa penghitungan ulang pasangan**, dengan kualitas teks diperiksa dan strategi missing value sudah ditetapkan. Bagi train/validasi/test berdasarkan query serta audit artikel sama lintas split; fit preprocessing hanya pada train. Target tersebut adalah total sebelum pembagian: jika membutuhkan 2.000–3.000 khusus subset train, kumpulkan lebih banyak sesuai proporsi test/validasi. Jumlah ini adalah target operasional; kecukupan pemodelan tetap diperiksa lewat distribusi kelas, learning curve dan evaluasi, bukan angka saja. Artikel baru untuk inferensi harus melalui ekstraksi/preprocessing yang sama; label boleh belum tersedia pada data prediksi, tetapi wajib pasti untuk training/evaluasi.
+
 ## Lanjutan siap jalan: main_02 (17 September 2026)
 
 ### Recovery Gemini timeout/jaringan
@@ -20,6 +221,8 @@ python src/recover_main_gemini.py --run --max-new-calls 2
 ```
 
 Preview tidak memakai API. Recovery saja memakai Gemini dan tidak melakukan pencarian SerpApi. Flag pada runner juga memeriksa Account API SerpApi serta rekap token sebelum/sesudah recovery. Timeout sebelumnya mungkin sudah diproses/ditagihkan di server meskipun respons tidak diterima; total token lokal hanya menghitung respons yang tersimpan.
+
+**Pembaruan 8 Oktober 2026 — Gemini 503:** recovery sekarang juga menerima HTTP 503, maksimal satu retry per slot. Untuk sekaligus mengisi slot yang belum dijalankan tanpa memulai query baru, gunakan `python src/recover_main_gemini.py --config configs/main_dataset_03.json --finish-incomplete` sebagai preview. Setelah jeda saat layanan bermasalah, tambahkan `--run --max-new-calls 1` untuk mencoba satu panggilan Gemini; jika berhasil, lanjutkan dengan batas 3. Semua panggilan, baik retry maupun slot baru, masuk batas yang sama. **Tidak memakai pencarian SerpApi.** Opsi ini melewati Google yang belum selesai serta memeriksa jendela enam jam sebelum setiap panggilan. Jika 503 berulang, hentikan percobaan; jangan terus menjalankan `--unstarted-only`, karena setiap query baru bisa menghabiskan pencarian Google sebelum Gemini gagal. Petunjuk lengkap ada di [MULAI_BATCH_03.md](MULAI_BATCH_03.md).
 
 Recovery mempertahankan respons sukses, Google lama, ID/repetition, dan arsip kegagalan di `recovery_history` pada JSON query. Waktu retry dicatat sebagai waktu percobaan aktif, sehingga validasi jendela waktu tidak memakai timestamp lama secara keliru. Jumlah slot penelitian tetap tiga; riwayat retry bukan ulangan tambahan untuk menghitung proporsi sitasi. Retry tidak dijalankan untuk respons selesai yang tidak memenuhi valid grounding, error billing/429, atau `started` dengan hasil tidak pasti. File `.tmp` dan lock mencegah recovery sampai diperiksa.
 
@@ -320,7 +523,7 @@ python src/collect_main_dataset.py --config configs/main_dataset_02.json --expor
 
 Di Notebook 04, ganti referensi batch `main_01` pada sel pemuatan menjadi `main_02` untuk melihat batch baru. `google_status=not_requested` berarti kolektor belum meminta Google organik lewat SerpApi; itu bukan status grounding internal Gemini.
 
-Tuntaskan pengumpulan/ekspor batch sebelum membuat manifest scraping. Scraper membekukan fingerprint file pasangan sumber; perubahan file sumber setelah scraping dimulai dapat ditolak untuk menjaga konsistensi.
+Selesaikan satu tahap pengumpulan/ekspor sebelum scraping. Scraper membekukan fingerprint file pasangan sumber; penambahan berikutnya dapat diterima dengan `--extend-manifest` sesuai bagian awal panduan, sedangkan perubahan nilai pasangan lama tetap ditolak.
 
 ## 8. Scraping URL artikel
 
@@ -349,14 +552,14 @@ Jika lewat Notebook 06, aktifkan `RUN_SCRAPING=True` pada sel terakhir: scraping
 
 ### 8.2. Scraping URL dari main_02
 
-Setelah bagian 7 selesai, salin `configs/article_dataset.json` menjadi `configs/article_dataset_02.json`, lalu ubah:
+Konfigurasi `configs/article_dataset_02.json` dan `configs/article_features_02.json` **sudah tersedia dan digunakan**. Jangan menimpanya. Snapshot yang ada menggunakan:
 
 ```json
 "dataset_id": "articles_main_02",
 "source_batches": ["main_02"]
 ```
 
-Salin `configs/article_features.json` menjadi `configs/article_features_02.json`; ubah hanya `scrape_config` menjadi `configs/article_dataset_02.json` jika definisi fitur lainnya tetap sama. Dua CSV review manual boleh dipakai bersama karena memakai ID artikel dan hostname.
+Config fitur `_02` sudah mengarah ke config scraping `_02`. CSV review manual dipakai bersama karena memakai ID artikel dan hostname. Perintah berikut berlaku selama file sumber `main_02` masih sama dengan manifest scraping. Jika sudah bertambah, tambahkan `--extend-manifest` pada perintah scraper sesuai bagian awal panduan.
 
 ```powershell
 python src/scrape_articles.py --config configs/article_dataset_02.json --max-new-urls 20
@@ -456,6 +659,7 @@ Jangan sekadar menumpuk `model_ready.csv` lalu menganggap fitur BM25 sudah seban
 - **Query baru:** buat snapshot CSV dan `dataset_id` utama baru. Jangan menunjuk batch berjalan langsung ke `accepted_new.csv` yang terus berubah.
 - **Keyword PAA tambahan:** gunakan `batch_id` PAA baru dan tambahkan ke config pool; perubahan ID tidak menonaktifkan cache/checkpoint request identik.
 - **URL baru dalam manifest scraping yang sama:** ulangi scraper dengan `--max-new-urls`. Tidak perlu menulis source code baru.
+- **Ekspor sumber bertambah dalam batch yang sama:** gunakan `--extend-manifest` untuk preview, lalu tambahkan `--run` untuk menyimpan perluasan dan mengambil URL; checkpoint lama dipertahankan.
 - **Sumber main batch baru:** buat config/ID scraping baru; jangan mengedit `source_batches` manifest yang sudah berjalan.
 - **Koreksi review/fitur:** edit CSV manual dan bangun ulang lokal, tanpa API.
 - **Error API, status started, atau lock tertinggal:** periksa checkpoint dan proses lama dahulu. Jangan menghapus raw/checkpoint untuk mengejar status selesai. Resume bukan retry semua kegagalan.

@@ -127,6 +127,27 @@ class MainDatasetTests(unittest.TestCase):
         self.assertEqual(self.calls['google'], 0)
         self.assertEqual(self.calls['gemini'], 0)
 
+    def test_runtime_reserve_allows_last_search_without_mutating_manifest(self):
+        self.collect(quota_reader=lambda key: {'total_searches_left': 1},
+                     quota_reserve_override=0)
+        self.assertEqual(self.calls['google'], 1)
+        self.assertEqual(self.calls['gemini'], 3)
+        self.assertEqual(self.manifest['config']['serp_quota_reserve'], 10)
+
+    def test_unstarted_only_skips_interrupted_checkpoint_without_changing_it(self):
+        self.manifest['queries'].append({**self.manifest['queries'][0], 'query_id': 'query_new'})
+        def fail(*args):
+            raise main.GenerationError('timeout')
+        with self.assertRaises(main.GenerationError):
+            self.collect(generator=fail, max_queries=1)
+        old = self.record_path().read_bytes()
+        self.collect(unstarted_only=True, max_queries=1)
+        self.assertEqual(self.record_path().read_bytes(), old)
+        new = self.record_path().with_name('query_new.json')
+        self.assertEqual(main.read_json(new)['status'], 'completed')
+        self.assertEqual(self.calls['google'], 2)
+        self.assertEqual(self.calls['gemini'], 3)
+
     def test_final_slot_error_completes_checkpoint_without_fourth_attempt(self):
         def generator(*args):
             if self.calls['gemini'] == 2:

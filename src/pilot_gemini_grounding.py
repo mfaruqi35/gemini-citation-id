@@ -107,7 +107,12 @@ class GenerationError(RuntimeError):
     def __init__(self, code, details=None):
         self.code = str(code)
         self.details = details or {}
-        super().__init__(f"Pemanggilan Gemini gagal ({self.code}); detail rahasia tidak dicetak.")
+        message = f"Pemanggilan Gemini gagal ({self.code}); detail rahasia tidak dicetak."
+        if self.code == '503':
+            message += (' Layanan Gemini sementara tidak tersedia. Hentikan query baru; '
+                        'untuk batch utama, setelah jeda gunakan recover_main_gemini.py dengan config '
+                        'batch yang sama dan --finish-incomplete untuk melanjutkan checkpoint Google yang tersedia.')
+        super().__init__(message)
 
 
 def generate(model, request, key, timeout=120):
@@ -158,8 +163,14 @@ def validate_public_url(url):
 
 
 class PublicRedirect(HTTPRedirectHandler):
+    def __init__(self):
+        super().__init__()
+        self.last_public_destination = ''
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         validate_public_url(newurl)
+        if not is_grounding_redirect(newurl):
+            self.last_public_destination = newurl
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -171,7 +182,53 @@ def is_grounding_redirect(url):
 def resolve_url(url):
     result = {"raw_url": url, "resolved_url": "", "resolution_status": "failed",
               "http_status": "", "resolved_at": now()}
-    opener = build_opener(PublicRedirect())
+    if is_grounding_redirect(url):
+        # A Google Location header is sufficient source identity evidence. Do
+        # not require successful access to the publisher to retain that URL.
+        try:
+            import requests
+        except ImportError:
+            requests = None
+        if requests is not None:
+            try:
+                validate_public_url(url)
+                with requests.Session() as session:
+                    current = url
+                    for _ in range(6):
+                        location = ''
+                        for method in ('HEAD', 'GET'):
+                            with session.request(method, current, timeout=10, stream=True,
+                                                 allow_redirects=False) as response:
+                                result['http_status'] = response.status_code
+                                if response.status_code in {301, 302, 303, 307, 308}:
+                                    location = response.headers.get('Location', '')
+                            if location:
+                                break
+                        if not location:
+                            break
+                        from urllib.parse import urljoin
+                        current = urljoin(current, location)
+                        validate_public_url(current)
+                        if not is_grounding_redirect(current):
+                            result.update(resolved_url=current,
+                                          resolution_status='destination_redirect_observed')
+                            return result
+                result['resolution_status'] = 'unresolved_redirect'
+            except (requests.RequestException, OSError, ValueError) as error:
+                result.update(resolution_status='network_or_url_error', error_type=type(error).__name__)
+            return result
+    # Some Windows installations have an incomplete OpenSSL CA store. Add the
+    # maintained CA bundle used by requests; never disable certificate checks.
+    import ssl
+    from urllib.request import HTTPSHandler
+    context = ssl.create_default_context()
+    try:
+        import certifi
+        context.load_verify_locations(certifi.where())
+    except ImportError:
+        pass
+    redirects = PublicRedirect()
+    opener = build_opener(redirects, HTTPSHandler(context=context))
     try:
         validate_public_url(url)
         # GET fallback also handles sources which reject HEAD; never download the body.
@@ -191,8 +248,16 @@ def resolve_url(url):
                     "resolved" if 200 <= status < 400 else "destination_http_error"))
                 return result
         result["resolution_status"] = "unresolved_redirect"
-    except (URLError, TimeoutError, OSError, ValueError):
-        result["resolution_status"] = "network_or_url_error"
+    except (URLError, TimeoutError, OSError, ValueError) as error:
+        # A validated Location header identifies the destination even when the
+        # publisher's TLS/server fails. It does not claim the page was fetched.
+        if redirects.last_public_destination:
+            result.update(resolved_url=redirects.last_public_destination,
+                          resolution_status='destination_unreachable')
+        else:
+            result["resolution_status"] = "network_or_url_error"
+        reason = error.reason if isinstance(error, URLError) else error
+        result['error_type'] = type(reason).__name__
     return result
 
 

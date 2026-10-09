@@ -74,7 +74,9 @@ def build_pool(config, root=ROOT):
             record = {'batch_id': batch, 'retrieved_at': google['started_at'], 'search_id': search_id}
             for row in extract_questions(payload, job, record, path.relative_to(root).as_posix()):
                 # Current main sources are initial PAA (depth 1) or direct Trends (depth 0).
-                parent_depth = int(query.get('paa_depth', 1 if query['source_type'] == 'people_also_ask' else 0))
+                raw_depth = query.get('paa_depth')
+                parent_depth = (int(raw_depth) if raw_depth not in ('', None)
+                                else (1 if query['source_type'] == 'people_also_ask' else 0))
                 records.append(source_record(row, query['query_id'], parent_depth + 1))
     return list({r['source_record_id']: r for r in records}.values())
 

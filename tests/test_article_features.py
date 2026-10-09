@@ -24,6 +24,45 @@ def article(body, metadata='', language='id'):
 
 
 class ArticleFeatureTests(unittest.TestCase):
+    def test_health_site_body_omits_keyword_lists_and_related_cards(self):
+        cases = [
+            ('rumahginjal.id', 'g-font-size-16 g-line-height-1_8 g-mb-30'),
+            ('axa-mandiri.co.id', 'box-full-content font-opensans'),
+        ]
+        for host, classes in cases:
+            with self.subTest(host=host):
+                html = article('<div class="' + classes + '"><p>' + TEXT * 6
+                               + '</p></div><div><p>' + 'KATAKUNCI KARTULAIN ' * 100
+                               + '</p></div>')
+                result = extract_features(html, 'https://' + host + '/artikel')
+                self.assertTrue(result['extraction_method'].startswith('dom:site:'))
+                self.assertIn('Kesehatan tubuh', result['text'])
+                self.assertNotIn('KATAKUNCI', result['text'])
+                self.assertNotIn('KARTULAIN', result['text'])
+
+    def test_hellosehat_article_body_wins_over_long_reference_list(self):
+        html = ('<html lang="id"><head><meta property="og:type" content="article"></head>'
+                '<body><h1>Minum obat saat hamil</h1>'
+                '<div class="unique-content-wrapper"><h2>Panduan</h2><p>'
+                + TEXT * 6 + '</p></div><div class="references"><p>'
+                + 'American Family Physician. Journal of Clinical Research. ' * 40
+                + '</p></div></body></html>')
+        result = extract_features(html, 'https://hellosehat.com/kehamilan/panduan-obat/')
+        self.assertEqual(result['extraction_method'], 'dom:site:.unique-content-wrapper')
+        self.assertEqual(result['article_review_status'], 'eligible_auto')
+        self.assertIn('Kesehatan tubuh', result['text'])
+        self.assertNotIn('American Family Physician', result['text'])
+
+    def test_elementor_full_body_is_selected_before_short_related_article_card(self):
+        html = article('<p>' + TEXT + '</p>')
+        html = html.replace('</body>', '<div class="elementor-widget-theme-post-content">'
+                            '<h2>Isi lengkap</h2><p>' + TEXT * 10 + '</p></div></body>')
+        result = extract_features(html, 'https://example.com/article')
+        self.assertEqual(result['extraction_method'], 'dom:.elementor-widget-theme-post-content')
+        self.assertGreater(result['word_count'], 200)
+        self.assertIn('Isi lengkap', result['text'])
+        self.assertNotIn('Informasi footer', result['text'])
+
     def test_counts_are_from_clean_body_and_keep_links_metadata(self):
         result = extract_features(article(
             '<h1>Judul artikel</h1><h2>Penyebab</h2>'

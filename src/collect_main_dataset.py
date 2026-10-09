@@ -31,6 +31,7 @@ GOOGLE_FIELDS = ['query_id', 'position', 'title', 'snippet', 'raw_url', 'source_
 
 
 def read_rows(path):
+    csv.field_size_limit(10_000_000)
     with path.open(encoding='utf-8-sig', newline='') as handle:
         return list(csv.DictReader(handle))
 
@@ -226,8 +227,11 @@ def export_dataset(manifest, data_root):
     return pairs
 
 
-def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher=fetch, generator=generate, resolver=resolve_url, quota_reader=quota):
+def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher=fetch, generator=generate, resolver=resolve_url, quota_reader=quota, unstarted_only=False, quota_reserve_override=None):
     config = manifest['config']
+    reserve = config['serp_quota_reserve'] if quota_reserve_override is None else quota_reserve_override
+    if type(reserve) is not int or reserve < 0:
+        raise ValueError('Cadangan kuota runtime harus bilangan bulat nonnegatif.')
     raw = data_root / 'raw/main' / config['dataset_id']
     raw.mkdir(parents=True, exist_ok=True)
     lock = raw / 'running.lock'
@@ -240,6 +244,8 @@ def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher
         jobs = []
         for query in manifest['queries']:
             path = raw / 'queries' / (query['query_id'] + '.json')
+            if unstarted_only and path.exists():
+                continue
             saved = read_json(path) if path.exists() else {}
             if saved.get('status') != 'completed':
                 jobs.append(query)
@@ -247,8 +253,8 @@ def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher
         needed = sum(not (raw / 'queries' / (q['query_id'] + '.json')).exists() for q in jobs)
         if needed:
             account = quota_reader(serp_key)
-            if account['total_searches_left'] < needed + config['serp_quota_reserve']:
-                raise RuntimeError(f"Sisa kuota {account['total_searches_left']} tidak cukup untuk {needed} pencarian dan cadangan {config['serp_quota_reserve']}.")
+            if account['total_searches_left'] < needed + reserve:
+                raise RuntimeError(f"Sisa kuota {account['total_searches_left']} tidak cukup untuk {needed} pencarian dan cadangan {reserve}.")
             write_json(raw / ('quota_before_' + digest(now()) + '.json'), account)
         write_json(frozen, manifest)
         for query in jobs:
