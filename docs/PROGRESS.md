@@ -1,6 +1,68 @@
 # Progres penelitian
 
-Terakhir diperbarui: **9 Oktober 2026**.
+Terakhir diperbarui: **10 Oktober 2026**.
+
+## 10 Oktober 2026: verifikasi lanjutan setelah scraping seluruh URL utama batch 4
+
+Batch `articles_main_04` sudah mencoba **390 URL Google Top 10**. Dari 212 halaman yang memiliki teks memadai, 66 sudah memiliki keputusan dan **146 artikel baru** dinilai menggunakan [rubrik yang sama](RUBRIK_SELEKSI_ARTIKEL.md). Asisten LLM memeriksa judul serta cuplikan awal/tengah/akhir; kasus meragukan diperiksa melalui teks lebih panjang dan HTML lokal. Label sitasi tidak digunakan untuk menentukan kelayakan.
+
+Hasil baru: **103 accepted, 27 excluded, dan 16 needs_extraction_review**. Penahanan mencakup delapan artikel bersambung yang belum lengkap, tiga kasus kehilangan butir/judul yang benar, dan lima kasus konten tercampur atau berulang. Sebanyak 178 URL yang belum memiliki teks memadai tetap menggunakan status teknisnya. Semua **1.134 keputusan lama dipertahankan identik**; tabel aktif kini memuat **1.280 ID unik**: 985 accepted, 198 excluded, dan 97 needs_extraction_review.
+
+Batch 1, 2, dan 4 dibangun ulang karena enam artikel baru juga ditemukan pada batch lama. Sebanyak 152 salinan lintas batch diverifikasi; satu versi teks berbeda pada batch 2 diperiksa tersendiri dan memiliki masalah kontaminasi yang sama. Ekstraksi serta embedding tersimpan digunakan secara lokal, dan BM25 dihitung ulang. Hasil setelah build dan validasi:
+
+| Batch | Pasangan utama | Model-ready sebelum audit lanjutan | Model-ready akhir |
+| --- | ---: | ---: | ---: |
+| main_01 | 325 | 186 | 186 |
+| main_02 | 2.165 | 883 | 882 |
+| main_03 | 379 | 165 | 165 |
+| main_04 | 390 | 111 | 131 |
+| **Total** | **3.259** | **1.345** | **1.364** |
+
+Baseline sudah mencakup scraping terbaru, berbeda dari audit sebelumnya pada tanggal yang sama. Sebanyak 31 pasangan masuk dan 12 ditarik, sehingga penambahan bersih adalah **19 pasangan**. Model-ready merupakan subset dari dataset utama: **1.364 siap model dan 1.895 belum siap**, bukan dua kelompok dataset yang dijumlahkan. Model-ready mencakup 1.253 ID artikel dan 353 ID kueri; distribusi domainnya **611 kesehatan, 499 keuangan, 254 teknologi**, dengan 1.043 label 0 dan 321 label 1. Jumlah pasangan tambahan Gemini-only tetap 1.429.
+
+Semua 212 halaman batch 4 yang lolos penyaringan isi sudah memiliki keputusan. Dua puluh satu pasangan batch 4 memakai artikel accepted tetapi masih tertahan karena pencocokan URL tidak pasti, termasuk 13 dari review baru. Akumulasi `needs_extraction_review` pada dataset utama adalah **102 pasangan dari 97 ID artikel**. Antrean needs_language_review/needs_page_type_review tetap nol; hambatan teknis dan pasangan tetap disimpan.
+
+Validasi memastikan keputusan lama, semua ID pasangan, jumlah percobaan/sitasi, proporsi, dan label sitasi tidak berubah. Sebanyak 328 pasangan model-ready masih memakai eligible_auto dari korpus lama di luar audit terbaru; sisanya 1.036 memakai accepted. Ada 358 baris model-ready dengan fitur kosong: usia publikasi pada 349 baris dan rerata panjang paragraf pada 14 baris, beririsan lima; penanganannya tetap dilakukan pada pipeline pelatihan.
+
+Keputusan dan alasan tersimpan di `data/manual/article_review.csv`; bukti, hash teks, backup, antrean ekstraksi, perubahan pasangan, serta log/validasi tersimpan di `outputs/article_verification_20261010_followup/`. Laporan: [VERIFIKASI_ARTIKEL_20261010_LANJUTAN.md](VERIFIKASI_ARTIKEL_20261010_LANJUTAN.md). Proses **tidak menggunakan kuota Gemini atau SerpApi**, tidak melakukan scraping baru, dan tidak mengubah kode ekstraktor. Penilaian merupakan seleksi kelayakan berbantuan LLM, bukan pemeriksaan kebenaran seluruh klaim atau verifikasi manusia independen.
+
+## 10 Oktober 2026: verifikasi artikel terbaru batch 3 dan 4
+
+Sebanyak **139 artikel unik** yang belum memiliki keputusan dinilai menggunakan [rubrik kelayakan artikel](RUBRIK_SELEKSI_ARTIKEL.md) versi `article_eligibility_20261006_v1`. Kandidat berasal dari 86 artikel batch 3 dan 53 artikel batch 4. Penilaian dilakukan oleh asisten LLM berdasarkan judul serta cuplikan awal/tengah/akhir, dengan pembacaan teks lebih panjang dan HTML lokal untuk kasus meragukan. Label sitasi dan tingkat otoritas sumber tidak menjadi kriteria penerimaan.
+
+| Batch sumber kandidat | Accepted | Excluded | Needs extraction review |
+| --- | ---: | ---: | ---: |
+| articles_main_03 | 69 | 8 | 9 |
+| articles_main_04 | 39 | 5 | 9 |
+| **Total artikel baru** | **108** | **13** | **18** |
+
+Artikel Indonesia yang substantif diterima, termasuk panduan, siaran pers, dan tulisan pengguna yang berdiri sendiri. Abstrak/metadata jurnal tanpa badan makalah, katalog/produk, beranda/agregasi, deskripsi video tanpa artikel, serta narasi utama Melayu dikecualikan. Delapan belas artikel ditahan karena pagination belum lengkap, bagian utama atau judul salah terambil, maupun kontaminasi materi halaman lain/spam. Artikel yang ditahan tetap disimpan untuk tindak lanjut ekstraksi.
+
+Semua **995 keputusan sebelumnya dipertahankan identik**; `data/manual/article_review.csv` kini memuat **1.134 ID unik**: 882 accepted, 171 excluded, dan 81 needs_extraction_review. Sebanyak 204 kemunculan URL pada batch 3–4 belum melewati penyaringan teknis untuk penilaian isi, sehingga tetap memakai status kegagalan/teks kosong/teks pendeknya. Audit hanya mencakup snapshot artikel terbaru yang telah diambil; bukan seluruh URL dalam manifest atau seluruh korpus historis.
+
+Keempat batch telah dibangun ulang; batch 1–2 ikut diselaraskan karena memakai tujuh artikel yang sama dengan kandidat terbaru. Model-ready berubah sebagai berikut:
+
+| Batch | Pasangan utama | Model-ready sebelum audit | Model-ready akhir |
+| --- | ---: | ---: | ---: |
+| main_01 | 325 | 186 | 186 |
+| main_02 | 2.165 | 885 | 883 |
+| main_03 | 379 | 134 | 165 |
+| main_04 | 92 | 26 | 35 |
+| **Total** | **2.961** | **1.231** | **1.269** |
+
+Terdapat 46 pasangan masuk dan delapan pasangan ditarik, sehingga pertambahan bersihnya **38 pasangan**. Angka sementara 1.271 berkurang dua setelah review artikel daftar bunga Pegadaian diterapkan pula pada dua pasangan batch 2; bagian/tabel utama artikel tersebut belum terambil. `model_ready.csv` merupakan subset `dataset.csv`, sehingga **1.269 pasangan siap pakai termasuk di dalam 2.961 pasangan utama**, dengan 1.692 pasangan lainnya belum siap. Semua catatan tetap disimpan.
+
+Model-ready akhir terdiri dari **568 kesehatan, 466 keuangan, dan 235 teknologi**, mencakup 1.165 ID artikel serta 339 ID kueri; distribusi labelnya 955 negatif dan 314 positif. Sebanyak 938 pasangan memakai artikel accepted, sedangkan 331 masih menggunakan artikel eligible_auto dari korpus lama di luar audit ini. Antrean `needs_language_review` dan `needs_page_type_review` pada keempat dataset utama sudah nol; status ekstraksi/teknis dan hambatan pasangan masih ada. Sembilan pasangan dari artikel accepted baru tetap tertahan karena pencocokan URL tidak pasti.
+
+Validasi akhir membuktikan keputusan lama dan seluruh observasi/label sitasi tidak berubah, 146 salinan lintas batch dari 139 ID kandidat memiliki hash teks yang sesuai, serta semua perubahan keanggotaan model-ready berasal dari keputusan review. Sebanyak 334 baris model-ready masih memiliki fitur kosong (usia publikasi 328, rerata panjang paragraf 11, beririsan lima), untuk ditangani dalam pipeline pelatihan. Ringkasan validasi dan perubahan per pasangan tersimpan di `validation_report.json` dan `membership_changes.csv` pada direktori audit.
+
+Keputusan, alasan, cuplikan bukti, hash teks, backup, dan log pembangunan ulang tersimpan di `outputs/article_verification_20261010/`. Laporan: [VERIFIKASI_ARTIKEL_20261010.md](VERIFIKASI_ARTIKEL_20261010.md). Proses memakai HTML, hasil ekstraksi, serta cache embedding lokal; **tidak menggunakan kuota Gemini atau SerpApi dan tidak melakukan crawling baru**. Penilaian ini merupakan seleksi kelayakan berbantuan LLM, bukan verifikasi manusia independen atau pemeriksaan kebenaran seluruh klaim artikel.
+
+## 9 Oktober 2026: seleksi otomatis untuk `main_04`
+
+Dari 582 query PAA accepted yang belum terjadwal, dibuat pemilih lokal [select_main_batch_queries.py](../src/select_main_batch_queries.py). Metodenya berimbang 15 query per domain dan menyebarkan pilihan pada `topic_id` sumber terlebih dahulu, dengan seed tetap 20261009 agar hasil dapat diulang. Snapshot `data/manual/main_04_queries.csv` berisi **45 query**, mencakup 15 topik kesehatan, 15 topik keuangan, dan 13 topik teknologi. Detail metode, sumber, seed, dan ID terpilih tercatat pada `configs/main_04_query_selection.json`. Teks dan provenance PAA asli tetap utuh.
+
+Konfigurasi pengumpulan `main_dataset_04.json`, scraping `article_dataset_04.json`, dan fitur `article_features_04.json` telah disiapkan dari protokol batch 3 dengan ID/path batch baru. Pengujian lokal memvalidasi jumlah, status accepted, keberagaman topik, ID unik, dan tidak ada query terpilih yang sudah terjadwal pada batch terdahulu. Sampai tahap ini **belum ada panggilan SerpApi/Gemini untuk batch 4**. Perintah pratinjau, pengumpulan bertahap, scraping, dan build tercatat di [MULAI_BATCH_04.md](MULAI_BATCH_04.md).
 
 ## 9 Oktober 2026: review seluruh sisa kandidat query PAA
 
