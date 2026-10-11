@@ -1,6 +1,14 @@
 # Progres penelitian
 
-Terakhir diperbarui: **10 Oktober 2026**.
+Terakhir diperbarui: **11 Oktober 2026**.
+
+## 11 Oktober 2026: perubahan versi Gemini dan perbandingan awal
+
+Metadata API menunjukkan seluruh 135 percobaan `main_04` dijawab Gemini 3.5 Flash dan seluruh 270 percobaan `main_05` dijawab Gemini 3.6 Flash, walaupun konfigurasi batch 5 masih meminta nama lama. Google mengumumkan pengalihan otomatis model tersebut. Kedua batch telah menyelesaikan masing-masing 45 dan 90 query; percobaan validnya 134/135 dan 270/270.
+
+Analisis pada tingkat query menemukan rerata sumber yang disitasi per percobaan valid turun dari 11,00 menjadi 8,42 (selisih −2,58; interval bootstrap 95% [−3,64; −1,50]; uji permutasi berstrata domain p < 0,001). Proporsi Google Top 10 yang pernah dikutip berubah dari 10,56% menjadi 13,28%, tetapi interval selisih melintasi nol dan uji eksploratif tidak menunjukkan perbedaan yang meyakinkan (p = 0,472). Proporsi label positif pada pasangan yang pencocokan URL-nya pasti juga tidak menunjukkan perbedaan meyakinkan. Arah irisan Top 10 berbeda antar-domain.
+
+Hasil ini membandingkan **dua kumpulan query pada waktu berbeda**, sehingga tidak membuktikan pergantian versi model sebagai penyebab selisih. Versi respons perlu dicatat dan analisis lanjutan perlu memeriksa kepekaan hasil per batch/versi. Rincian angka, metode, batas interpretasi, dan skrip ulang ada di [PERBANDINGAN_GEMINI_35_36_20261011.md](PERBANDINGAN_GEMINI_35_36_20261011.md). Analisis hanya membaca checkpoint/ekspor lokal; tidak memakai kuota API.
 
 ## 10 Oktober 2026: verifikasi lanjutan setelah scraping seluruh URL utama batch 4
 
