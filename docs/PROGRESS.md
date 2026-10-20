@@ -1,6 +1,51 @@
 # Progres penelitian
 
-Terakhir diperbarui: **11 Oktober 2026**.
+Terakhir diperbarui: **14 Oktober 2026**.
+
+## 14 Oktober 2026: verifikasi lanjutan artikel batch 6 dan 7
+
+Audit 13–14 Oktober menilai **598 artikel unik baru** dengan [rubrik kelayakan artikel](RUBRIK_SELEKSI_ARTIKEL.md): **468 accepted, 80 excluded, dan 50 needs_extraction_review**. Cakupan seluruh kandidat utama dengan unduh sukses dan teks minimal 100 kata yang belum memiliki keputusan pada snapshot batch 1–7, termasuk eligible_auto. Kandidat pertama kali ditemukan di batch 6 (130) dan 7 (468). Pemeriksaan mencakup judul serta cuplikan awal/tengah/akhir, dengan 61 pemeriksaan teks/HTML lebih dalam; label sitasi tidak menjadi kriteria.
+
+Seluruh **2.113 keputusan lama dipertahankan identik**. Tabel aktif sekarang **2.711 ID artikel**: 2.108 accepted, 389 excluded dan 214 needs_extraction_review. Sebanyak 612 salinan diperiksa hash-nya, termasuk tiga versi teks berbeda.
+
+| Batch | Pasangan utama | Siap model sebelum | Masuk | Ditarik | Siap model sesudah |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| main_01 | 325 | 181 | 0 | 0 | 181 |
+| main_02 | 2.165 | 848 | 0 | 0 | 848 |
+| main_03 | 571 | 215 | 0 | 0 | 215 |
+| main_04 | 390 | 131 | 0 | 0 | 131 |
+| main_05 | 777 | 340 | 0 | 0 | 340 |
+| main_06 | 385 | 77 | 55 | 13 | 119 |
+| main_07 | 896 | 286 | 126 | 30 | 382 |
+| **Total** | **5.509** | **2.078** | **181** | **43** | **2.216** |
+
+Model-ready akhir mencakup **2.047 ID artikel** dan **562 ID kueri**. Distribusi domain: kesehatan 954, teknologi 468, keuangan 794; label 0: 1.819, label 1: 397. Label dan seluruh ID pasangan tidak berubah; perubahan bersih siap model +138 pasangan mengikuti hasil penilaian isi.
+
+Tidak ada kandidat utama dengan teks memadai yang belum memiliki keputusan pada snapshot ini; antrean bahasa/jenis halaman 0. Seluruh model-ready berstatus artikel accepted. **3.293 pasangan utama masih belum siap**, termasuk **225 pasangan dari 214 ID** yang membutuhkan perbaikan ekstraksi. Lihat [antrean ekstraksi](../outputs/article_verification_20261013/needs_extraction_review.csv).
+
+Batch 1, 2, 6 dan 7 dibangun ulang lokal; batch lain tetap. **Tidak ada scraping atau penggunaan kuota Gemini/SerpApi.** Keputusan ada di `data/manual/article_review.csv`, audit/backup di `outputs/article_verification_20261013/`. Penilaian berbantuan LLM, bukan pemeriksaan kebenaran seluruh klaim atau verifikasi manusia independen. Rincian: [VERIFIKASI_ARTIKEL_20261014.md](VERIFIKASI_ARTIKEL_20261014.md).
+
+## 11 Oktober 2026: verifikasi artikel utama yang belum memiliki keputusan, termasuk batch 6
+
+Sebanyak **833 artikel unik baru** dinilai dengan [rubrik kelayakan artikel](RUBRIK_SELEKSI_ARTIKEL.md): **655 accepted, 111 excluded, dan 67 needs_extraction_review**. Cakupan meliputi seluruh kandidat utama dengan unduh sukses dan teks minimal 100 kata pada snapshot batch 1–6, termasuk eligible_auto lama. Sebanyak 18 kandidat berasal dari batch 6 yang tersedia selama audit. Label sitasi tidak digunakan sebagai dasar keputusan; 85 kasus diperiksa lebih dalam melalui teks dan HTML lokal.
+
+Seluruh **1.280 keputusan lama dipertahankan identik**. Tabel aktif kini berisi **2.113 ID artikel**: 1.640 accepted, 309 excluded, dan 164 needs_extraction_review. Sebanyak 868 salinan lintas batch diperiksa berdasarkan hash; lima versi berbeda dinilai tersendiri.
+
+| Batch | Pasangan utama | Model-ready sebelum | Masuk | Ditarik | Model-ready sesudah |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| main_01 | 325 | 186 | 0 | 5 | 181 |
+| main_02 | 2.165 | 882 | 3 | 37 | 848 |
+| main_03 | 571 | 202 | 16 | 3 | 215 |
+| main_04 | 390 | 131 | 0 | 0 | 131 |
+| main_05 | 777 | 260 | 117 | 37 | 340 |
+| main_06 | 44 | 7 | 8 | 1 | 14 |
+| **Total** | **4.272** | **1.668** | **144** | **83** | **1.729** |
+
+Model-ready akhir mencakup **1.591 ID artikel** dan **432 ID kueri**. Distribusi domain: kesehatan 763, teknologi 341, keuangan 625; distribusi label: 1.378 negatif dan 351 positif. Ada 144 pasangan masuk dan 83 ditarik setelah peninjauan isi, dengan perubahan bersih +61. Label, jumlah percobaan/sitasi, proporsi, dan seluruh ID pasangan tidak berubah.
+
+Tidak ada lagi kandidat utama dengan teks memadai yang belum memiliki keputusan pada snapshot ini; antrean bahasa/jenis halaman berjumlah 0. Seluruh model-ready memakai artikel accepted. Namun, **2.543 pasangan utama masih belum siap**: mencakup hambatan teknis, artikel dikecualikan, ekstraksi belum utuh, serta ketidakpastian pasangan. Akumulasi needs_extraction_review adalah **173 pasangan dari 164 ID artikel**. Artikel yang ditahan dapat ditindaklanjuti melalui [antrean ekstraksi](../outputs/article_verification_20261011/needs_extraction_review.csv).
+
+Keputusan disimpan di `data/manual/article_review.csv`; bukti, backup, dan validasi ada di `outputs/article_verification_20261011/`. Batch 1, 2, 3, 5, dan 6 dibangun ulang menggunakan cache ekstraksi/embedding lokal; batch 4 tetap. **Tidak ada scraping baru atau pemakaian kuota Gemini/SerpApi.** Hasil merupakan seleksi berbantuan LLM, bukan pemeriksaan kebenaran semua klaim atau verifikasi manusia independen. Rincian: [VERIFIKASI_ARTIKEL_20261011.md](VERIFIKASI_ARTIKEL_20261011.md).
 
 ## 11 Oktober 2026: perubahan versi Gemini dan perbandingan awal
 

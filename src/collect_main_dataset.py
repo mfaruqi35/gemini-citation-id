@@ -227,7 +227,7 @@ def export_dataset(manifest, data_root):
     return pairs
 
 
-def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher=fetch, generator=generate, resolver=resolve_url, quota_reader=quota, unstarted_only=False, quota_reserve_override=None):
+def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher=fetch, generator=generate, resolver=resolve_url, quota_reader=quota, unstarted_only=False, quota_reserve_override=None, skip_uncertain=False):
     config = manifest['config']
     reserve = config['serp_quota_reserve'] if quota_reserve_override is None else quota_reserve_override
     if type(reserve) is not int or reserve < 0:
@@ -247,6 +247,8 @@ def collect(manifest, data_root, serp_key, gemini_key, max_queries=None, fetcher
             if unstarted_only and path.exists():
                 continue
             saved = read_json(path) if path.exists() else {}
+            if skip_uncertain and any(t.get('status') == 'started' for t in saved.get('trials', [])):
+                continue
             if saved.get('status') != 'completed':
                 jobs.append(query)
         jobs = jobs[:max_queries] if max_queries is not None else jobs

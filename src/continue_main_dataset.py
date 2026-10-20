@@ -87,6 +87,8 @@ def main():
     parser.add_argument('--quota-reserve', type=int, default=None,
                         help='Cadangan SerpApi untuk eksekusi ini; tidak mengubah manifest batch.')
     parser.add_argument('--unstarted-only', action='store_true', help='Hanya query tanpa checkpoint; lewati seluruh query yang pernah dimulai.')
+    parser.add_argument('--skip-uncertain', action='store_true',
+                        help='Lewati query dengan percobaan Gemini started tanpa respons; checkpoint tidak diubah.')
     parser.add_argument('--recover-gemini', action='store_true', help='Pulihkan error transport sebelum query baru; satu retry per slot.')
     parser.add_argument('--max-recovery-calls', type=int, default=3)
     args = parser.parse_args()
@@ -135,10 +137,16 @@ def main():
             path = raw / 'queries' / (q['query_id'] + '.json')
             if args.unstarted_only and path.exists():
                 continue
-            if not path.exists() or read_json(path).get('status') != 'completed':
+            saved = read_json(path) if path.exists() else {}
+            if args.skip_uncertain and any(t.get('status') == 'started' for t in saved.get('trials', [])):
+                continue
+            if saved.get('status') != 'completed':
                 remaining.append(q)
         if not remaining:
-            print('Tidak ada query baru yang belum dimulai.' if args.unstarted_only else 'Semua query batch selesai.', flush=True)
+            message = ('Tidak ada query baru yang belum dimulai.' if args.unstarted_only else
+                       'Tidak ada query lain untuk dilanjutkan; checkpoint Gemini tidak pasti tetap tertahan.'
+                       if args.skip_uncertain else 'Semua query batch selesai.')
+            print(message, flush=True)
             return
         available = max(0, report['serpapi']['total_searches_left'] - reserve)
         selected = 0
@@ -153,6 +161,8 @@ def main():
             return
         try:
             extra = ({'quota_reserve_override': reserve} if args.quota_reserve is not None else {})
+            if args.skip_uncertain:
+                extra['skip_uncertain'] = True
             collect(manifest, ROOT / 'data', serp_key, gemini_key, max_queries=selected,
                     unstarted_only=args.unstarted_only, **extra)
         except (RuntimeError, ValueError, OSError):

@@ -44,6 +44,27 @@ class ContinueTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 runner.main()
 
+    def test_skip_uncertain_passes_mode_and_preserves_checkpoint(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest = {'config': {'dataset_id': 'test', 'serp_api_key_variable': 'TEST',
+                                   'serp_quota_reserve': 10},
+                        'queries': [{'query_id': q, 'domain': 'kesehatan'} for q in ['uncertain', 'next']]}
+            checkpoint = root / 'data/raw/main/test/queries/uncertain.json'
+            runner.write_json(checkpoint, {'status': 'started', 'trials': [{'status': 'started'}]})
+            original = checkpoint.read_bytes()
+            with patch.object(runner, 'ROOT', root), \
+                 patch.object(runner, 'prepare', return_value=manifest), \
+                 patch.object(runner, 'get_serp_key', return_value='fake'), \
+                 patch.object(runner, 'load_key', return_value='fake'), \
+                 patch.object(runner, 'monitor', return_value={'serpapi': {'total_searches_left': 11}}), \
+                 patch.object(runner, 'collect') as collect, \
+                 patch.object(sys, 'argv', ['runner', '--run', '--skip-uncertain', '--max-queries', '1']):
+                runner.main()
+                collect.assert_called_once_with(manifest, root / 'data', 'fake', 'fake',
+                                                max_queries=1, unstarted_only=False, skip_uncertain=True)
+            self.assertEqual(checkpoint.read_bytes(), original)
+
     def test_usage_counts_saved_response_even_before_resolution(self):
         with tempfile.TemporaryDirectory() as folder:
             raw = Path(folder)

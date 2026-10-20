@@ -148,6 +148,22 @@ class MainDatasetTests(unittest.TestCase):
         self.assertEqual(self.calls['google'], 2)
         self.assertEqual(self.calls['gemini'], 3)
 
+    def test_skip_uncertain_processes_next_query_without_changing_first(self):
+        self.manifest['queries'].append({**self.manifest['queries'][0], 'query_id': 'query_new'})
+        self.collect(max_queries=1)
+        record = main.read_json(self.record_path())
+        record['status'] = 'started'
+        record['trials'][2].pop('response', None)
+        record['trials'][2]['status'] = 'started'
+        main.write_json(self.record_path(), record)
+        original = self.record_path().read_bytes()
+        self.collect(skip_uncertain=True, max_queries=1)
+        self.assertEqual(self.record_path().read_bytes(), original)
+        new = self.data / 'raw/main/main_01/queries/query_new.json'
+        self.assertEqual(main.read_json(new)['status'], 'completed')
+        self.assertEqual(self.calls['google'], 2)
+        self.assertEqual(self.calls['gemini'], 6)
+
     def test_final_slot_error_completes_checkpoint_without_fourth_attempt(self):
         def generator(*args):
             if self.calls['gemini'] == 2:
